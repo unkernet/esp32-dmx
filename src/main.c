@@ -9,6 +9,11 @@
 #include "nvs_flash.h"
 #include "esp_http_server.h"
 #include "lwip/sockets.h"
+#include "esp_spiffs.h"
+#include "driver/gpio.h"
+#include "esp_pm.h"
+
+#define BLINK_GPIO GPIO_NUM_8
 
 static const char *TAG = "WIFI_CONFIG";
 
@@ -31,6 +36,15 @@ typedef struct {
 
 static ws_client_info_t ws_clients[MAX_WS_CLIENTS];
 static int ws_clients_count = 0;
+
+void blink_led(int times) {
+    for (int i = 0; i < times; i++) {
+        gpio_set_level(BLINK_GPIO, 1);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        gpio_set_level(BLINK_GPIO, 0);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+    }
+}
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -112,11 +126,15 @@ void wifi_init_sta(const char* ssid, const char* password)
 void wifi_init_ap(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
+    blink_led(1);
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    blink_led(1);
     esp_netif_create_default_wifi_ap();
+    blink_led(1);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    blink_led(1);
 
     wifi_config_t wifi_config = {
         .ap = {
@@ -132,8 +150,12 @@ void wifi_init_ap(void)
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    blink_led(1);
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
+    blink_led(1);
     ESP_ERROR_CHECK(esp_wifi_start());
+    blink_led(1);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
     ESP_LOGI(TAG, "wifi_init_ap finished. SSID:%s password:%s",
              AP_SSID, AP_PASSWORD);
@@ -185,12 +207,44 @@ esp_err_t read_wifi_config(char* ssid, size_t ssid_len, char* password, size_t p
 
 static esp_err_t http_get_handler(httpd_req_t *req)
 {
-    const char* resp_str = "<!DOCTYPE html><html><head><title>WiFi Config</title></head><body><h1>WiFi Configuration</h1><form action=\"/\" method=\"post\"><label for=\"ssid\">SSID:</label><br><input type=\"text\" id=\"ssid\" name=\"ssid\"><br><label for=\"password\">Password:</label><br><input type=\"password\" id=\"password\" name=\"password\"><br><br><input type=\"submit\" value=\"Submit\"></form></body></html>";
-    httpd_resp_send(req, resp_str, strlen(resp_str));
+    char*  buf;
+    size_t buf_len;
+    
+    FILE* f = fopen("/spiffs/index.html", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open index.html");
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    fseek(f, 0, SEEK_END);
+    buf_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    buf = malloc(buf_len);
+    fread(buf, 1, buf_len, f);
+    fclose(f);
+
+    httpd_resp_send(req, buf, buf_len);
+    free(buf);
     return ESP_OK;
 }
 
-static esp_err_t http_post_handler(httpd_req_t *req)
+static esp_err_t http_get_config_handler(httpd_req_t *req)
+{
+    char ssid[32];
+    char password[64];
+    if (read_wifi_config(ssid, sizeof(ssid), password, sizeof(password)) == ESP_OK) {
+        char json_buf[200];
+        snprintf(json_buf, sizeof(json_buf), "{\"ssid\": \"%s\", \"password\": \"%s\"}", ssid, password);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, json_buf, strlen(json_buf));
+    } else {
+        httpd_resp_send_404(req);
+    }
+    return ESP_OK;
+}
+
+static esp_err_t http_post_config_handler(httpd_req_t *req)
 {
     char buf[100];
     int ret, remaining = req->content_len;
@@ -294,10 +348,17 @@ static const httpd_uri_t get_uri = {
     .user_ctx = NULL
 };
 
-static const httpd_uri_t post_uri = {
-    .uri      = "/",
+static const httpd_uri_t post_config_uri = {
+    .uri      = "/config",
     .method   = HTTP_POST,
-    .handler  = http_post_handler,
+    .handler  = http_post_config_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t get_config_uri = {
+    .uri      = "/config",
+    .method   = HTTP_GET,
+    .handler  = http_get_config_handler,
     .user_ctx = NULL
 };
 
@@ -316,7 +377,8 @@ httpd_handle_t start_webserver(void)
 
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &get_uri);
-        httpd_register_uri_handler(server, &post_uri);
+        httpd_register_uri_handler(server, &post_config_uri);
+        httpd_register_uri_handler(server, &get_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
     }
     return server;
@@ -382,17 +444,51 @@ void udp_server_task(void *pvParameters)
             shutdown(sock, 0);
             close(sock);
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
     vTaskDelete(NULL);
 }
 
 void app_main() {
+    #if CONFIG_PM_ENABLE
+        esp_pm_config_esp32c3_t pm_config = {
+            .max_freq_mhz = 240,
+            .min_freq_mhz = 80,
+            .light_sleep_enable = true
+        };
+        ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+    #endif
+
+    gpio_reset_pin(BLINK_GPIO);
+    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+    blink_led(2);
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = true
+    };
+    
+    ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
 
     char ssid[32];
     char password[64];
