@@ -78,7 +78,7 @@ static void ble_app_advertise(void)
 
     int rc;
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, (250),
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, (25000),
                       &params, gap_event, NULL);
 
     if (rc != 0) {

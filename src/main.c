@@ -4,10 +4,11 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_spiffs.h"
+#include "esp_pm.h"
 #include "driver/gpio.h"
 #include "wifi_manager.h"
 #include "web_server.h"
-#include "udp_server.h"
+#include "artnet_server.h"
 #include "ble_beacon.h"
 
 #define BLINK_GPIO GPIO_NUM_8
@@ -24,11 +25,11 @@ void blink_led(int times) {
 }
 
 void app_main() {
-    #if CONFIG_PM_ENABLE_1
+    #if CONFIG_PM_ENABLE
         esp_pm_config_t pm_config = {
-            .max_freq_mhz = 240,
+            .max_freq_mhz = 160,
             .min_freq_mhz = 80,
-            .light_sleep_enable = true
+            .light_sleep_enable = false
         };
         ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     #endif
@@ -77,5 +78,5 @@ void app_main() {
         wifi_init_ap();
     }
     start_webserver();
-    xTaskCreate(udp_server_task, "udp_server", 4096, NULL, 5, NULL);
+    xTaskCreate(artnet_server_task, "artnet_server", 4096, NULL, 5, NULL);
 }
