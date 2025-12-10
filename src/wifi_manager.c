@@ -6,10 +6,12 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "lwip/ip_addr.h" // For IP address structures
+#include "lwip/ip_addr.h"
+#include "lwip/sockets.h"
+#include "esp_netif_ip_addr.h"
 #include "wifi_manager.h"
 #include "app_config.h"
-#include "app_config_nvs.h" // For saving/loading config
+#include "app_config_nvs.h"
 
 static const char *TAG = "WIFI_MANAGER";
 
@@ -128,24 +130,14 @@ static void wifi_init_ap(app_config_t *config) // Made static
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
     blink_led(1);
 
-    // Configure static IP for AP mode
-    esp_netif_dhcps_stop(ap_netif); // Corrected: use dhcps_stop for AP server
-    esp_netif_ip_info_t ip_info;
-    ip_info.ip.addr = config->ap_ip;
-    ip_info.netmask.addr = cidr_len_to_ip_netmask(config->ap_netmask_len);
-    ip_info.gw.addr = config->ap_gateway;
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(ap_netif, &ip_info));
-    ESP_ERROR_CHECK(esp_netif_dhcps_start(ap_netif)); // Start DHCP server for clients
-
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    blink_led(1);
 
     wifi_config_t wifi_config = {
         .ap = {
             .ssid_len = strlen(config->ap_ssid),
             .max_connection = 4,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK
+            .authmode = WIFI_AUTH_WPA_WPA2_PSK,
         },
     };
     strncpy((char*)wifi_config.ap.ssid, config->ap_ssid, sizeof(wifi_config.ap.ssid));
@@ -186,6 +178,7 @@ void wifi_manager_init(app_config_t *config) {
             ESP_LOGI(TAG, "STA mode connected successfully.");
         } else {
             ESP_LOGW(TAG, "STA mode failed to connect, falling back to AP mode.");
+            esp_wifi_stop();
             wifi_init_ap(config);
         }
     } else {

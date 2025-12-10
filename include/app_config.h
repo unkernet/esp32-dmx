@@ -9,11 +9,11 @@
 #define MAX_PASSWORD_LEN 64
 
 // Configuration structure
-typedef struct {
+typedef struct __attribute__((packed)) {
     // Station (STA) mode settings
     char sta_ssid[MAX_SSID_LEN + 1];
     char sta_password[MAX_PASSWORD_LEN + 1];
-    bool sta_dhcp_enabled;
+    uint8_t sta_dhcp_enabled;
     uint32_t sta_ip;        // IP address in network byte order
     uint8_t sta_netmask_len;   // Netmask CIDR prefix length (e.g., 24 for 255.255.255.0)
     uint32_t sta_gateway;   // Gateway in network byte order

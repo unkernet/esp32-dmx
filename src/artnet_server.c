@@ -10,6 +10,16 @@
 #include "esp_mac.h"
 #include "web_server.h"
 #include "ambitful_ble.h"
+#include "freertos/semphr.h" // For mutex
+
+// Global variables for DMX output
+static uint8_t s_dmx_output_data[512];
+static uint8_t s_dmx_output_sequence = 0;
+static uint8_t s_dmx_output_universe = 0;
+static uint16_t s_dmx_output_length = 0;
+static bool s_dmx_data_changed = false;
+static SemaphoreHandle_t s_dmx_data_mutex;
+static uint8_t sequence = 1;
 
 static const char *TAG = "ARTNET_SERVER";
 
@@ -171,6 +181,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet) {
 
     send_ws_dmx_data(universe, dmx_packet->data, length);
     send_ambitful_dmx_data(universe, dmx_packet->data, length);
+    send_artnet_dmx_data(universe, dmx_packet->data, length, dmx_packet->sequence); // just for test
 }
 
 static void handle_artnet_packet(int sock, const char *rx_buffer, int len, const struct sockaddr_in *source_addr) {
@@ -186,7 +197,7 @@ static void handle_artnet_packet(int sock, const char *rx_buffer, int len, const
 
     switch (header->opcode) {
         case ARTNET_OP_POLL:
-            send_artpollreply(sock, source_addr);
+            // send_artpollreply(sock, source_addr);
             break;
         case ARTNET_OP_DMX:
             if (len >= sizeof(artdmx_packet_t) - (512 - ((artdmx_packet_t*)rx_buffer)->length)) { // Ensure packet is long enough
@@ -204,11 +215,15 @@ static void handle_artnet_packet(int sock, const char *rx_buffer, int len, const
 void artnet_server_task(void *pvParameters)
 {
     char rx_buffer[530]; // Max ArtDMX packet size
-    char addr_str[128];
     int addr_family;
     int ip_protocol;
 
     while (1) {
+        struct sockaddr_in broadcast_addr = {
+            .sin_family = AF_INET,
+            .sin_port = htons(ARTNET_PORT),
+            .sin_addr.s_addr = htonl(INADDR_BROADCAST) // Broadcast address
+        };
         struct sockaddr_in dest_addr = {
             .sin_addr.s_addr = htonl(INADDR_ANY),
             .sin_family = AF_INET,
@@ -216,7 +231,6 @@ void artnet_server_task(void *pvParameters)
         };
         addr_family = AF_INET;
         ip_protocol = IPPROTO_IP;
-        inet_ntoa_r(dest_addr.sin_addr, addr_str, sizeof(addr_str) - 1);
 
         int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
         if (sock < 0) {
@@ -224,6 +238,10 @@ void artnet_server_task(void *pvParameters)
             break;
         }
         ESP_LOGI(TAG, "Socket created");
+
+        // Enable broadcast
+        int enable_broadcast = 1;
+        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &enable_broadcast, sizeof(enable_broadcast));
 
         int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err < 0) {
@@ -242,7 +260,34 @@ void artnet_server_task(void *pvParameters)
             } else {
                 handle_artnet_packet(sock, rx_buffer, len, &source_addr);
             }
-            vTaskDelay((pdMS_TO_TICKS(4)));
+
+            // Handle outgoing Art-Net DMX data from WebSocket
+            if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)(pdMS_TO_TICKS(4))) == pdTRUE) { // Try to take mutex, don't block indefinitely
+                if (s_dmx_data_changed) {
+                    artdmx_packet_t dmx_packet_out = {
+                        .header = {
+                            .id = ARTNET_ID,
+                            .opcode = ARTNET_OP_DMX,
+                            .prot_ver = htons(14), // Art-Net Protocol Version 14
+                        },
+                        .sequence = s_dmx_output_sequence,
+                        .physical = 0,
+                        .universe = s_dmx_output_universe,
+                        .sub_universe = 0, // Assuming sub-universe 0
+                        .length = htons(s_dmx_output_length),
+                    };
+                    memcpy(dmx_packet_out.data, s_dmx_output_data, s_dmx_output_length);
+
+                    int tx_err = sendto(sock, &dmx_packet_out, sizeof(artdmx_packet_t) - (512 - s_dmx_output_length), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+                    if (tx_err < 0) {
+                        ESP_LOGE(TAG, "Error sending Art-Net DMX broadcast: errno %d", errno);
+                    }
+                    s_dmx_data_changed = false;
+                }
+                xSemaphoreGive(s_dmx_data_mutex);
+                
+                vTaskDelay((TickType_t)(pdMS_TO_TICKS(4))); // Small delay to yield to other tasks
+            }
         }
 
         if (sock != -1) {
@@ -256,10 +301,34 @@ void artnet_server_task(void *pvParameters)
 
 esp_err_t start_artnet_server(app_config_t *config) {
     app_config = config;
+    s_dmx_data_mutex = xSemaphoreCreateMutex();
+    if (s_dmx_data_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create DMX data mutex");
+        return ESP_FAIL;
+    }
     xTaskCreate(artnet_server_task, "artnet_server", 4096, NULL, 5, NULL);
+    // xTaskCreate(artnet_server_task, "artnet_sender", 4096, NULL, 5, NULL);
     return ESP_OK;
 }
 
-void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
-    //
+void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length, uint8_t seq) {
+    if (length > 512) {
+        return;
+    }
+    if (!seq) {
+        if (++sequence == 0) {
+            sequence = 1;
+        }
+        seq = sequence;
+    }
+    if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)0) == pdTRUE) { // Try to take mutex immediately
+        s_dmx_output_universe = universe;
+        s_dmx_output_length = length;
+        s_dmx_output_sequence = seq;
+        memcpy(s_dmx_output_data, data, length);
+        s_dmx_data_changed = true;
+        xSemaphoreGive(s_dmx_data_mutex);
+    } else {
+        ESP_LOGW(TAG, "Failed to acquire DMX data mutex in send_artnet_dmx_data");
+    }
 }

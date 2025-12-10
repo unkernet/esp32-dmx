@@ -14,6 +14,11 @@
 
 #define MAX_WS_CLIENTS 5
 
+typedef struct {
+    httpd_handle_t handle;
+    int fd;
+} ws_client_info_t;
+
 static const char *TAG = "WEB_SERVER";
 
 ws_client_info_t ws_clients[MAX_WS_CLIENTS];
@@ -183,7 +188,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     httpd_ws_frame_t ws_pkt;
     uint8_t *buf = NULL;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+    ws_pkt.type = HTTPD_WS_TYPE_BINARY; // Changed to binary to receive binary data
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_HTTPD_INVALID_REQ) {
@@ -202,8 +207,22 @@ static esp_err_t ws_handler(httpd_req_t *req)
             free(buf);
             return ret;
         }
-        ESP_LOGI(TAG, "Got packet with message: %s", ws_pkt.payload);
-        httpd_ws_send_frame(req, &ws_pkt);
+
+        if (ws_pkt.type == HTTPD_WS_TYPE_BINARY) {
+            if (ws_pkt.len > 1) { // At least 1 byte for universe + 1 byte for data
+                uint8_t universe = ws_pkt.payload[0];
+                const uint8_t *data = (const uint8_t *)(ws_pkt.payload + 1);
+                uint16_t data_length = ws_pkt.len - 1;
+                send_artnet_dmx_data(universe, data, data_length, 0);
+                ESP_LOGD(TAG, "Received binary WS DMX data for universe %d, length %d", universe, data_length);
+            } else {
+                ESP_LOGW(TAG, "Received binary WS message too short (len: %d)", ws_pkt.len);
+            }
+        } else {
+            // Echo back text messages
+            // ESP_LOGI(TAG, "Got text packet with message: %s", ws_pkt.payload);
+            // httpd_ws_send_frame(req, &ws_pkt);
+        }
         free(buf);
     }
 
@@ -246,6 +265,11 @@ static const httpd_uri_t ws_uri = {
     .is_websocket = true
 };
 
+void httpd_close_cb(httpd_handle_t hd, int sockfd)
+{
+    remove_ws_client(sockfd);
+}
+
 httpd_handle_t start_webserver(app_config_t *config)
 {
     global_web_config = config; // Store the config pointer
@@ -253,6 +277,7 @@ httpd_handle_t start_webserver(app_config_t *config)
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
     httpd_cfg.uri_match_fn = httpd_uri_match_wildcard; // Enable wildcard matching if needed
+    httpd_cfg.close_fn = httpd_close_cb;
 
     if (httpd_start(&server, &httpd_cfg) == ESP_OK) {
         httpd_register_uri_handler(server, &get_root_uri);
@@ -274,6 +299,8 @@ void send_ws_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
         ws_pkt.payload = buf;
         ws_pkt.len = length + 1;
         ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+
+        ESP_LOGI(TAG, "Send ws, len: %d, clients: %d", ws_pkt.len, ws_clients_count);
 
         for (int i = 0; i < ws_clients_count; i++) {
             httpd_ws_send_frame_async(ws_clients[i].handle, ws_clients[i].fd, &ws_pkt);

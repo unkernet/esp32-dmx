@@ -32,7 +32,7 @@ void app_config_get_default(app_config_t *config) {
 
     // Default BLE Beacon settings
     config->ble_interval = 30; // 30ms advertising interval
-    config->ble_duration_ms = 2500; // 2.5s duration
+    config->ble_duration_ms = 25000; // 25s duration
 
     config->dmx_in_universe = 0;
     config->dmx_out_universe = 0;
