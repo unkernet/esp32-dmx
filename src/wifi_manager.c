@@ -57,10 +57,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 static void wifi_init_sta(app_config_t *config) // Made static
 {
     wifi_event_group = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
 
     if (!config->sta_dhcp_enabled) {
@@ -123,13 +119,7 @@ static void wifi_init_sta(app_config_t *config) // Made static
 
 static void wifi_init_ap(app_config_t *config) // Made static
 {
-    ESP_ERROR_CHECK(esp_netif_init());
-    blink_led(1);
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    blink_led(1);
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
-    blink_led(1);
-
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
@@ -150,11 +140,8 @@ static void wifi_init_ap(app_config_t *config) // Made static
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    blink_led(1);
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
-    blink_led(1);
     ESP_ERROR_CHECK(esp_wifi_start());
-    blink_led(1);
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
     ESP_LOGI(TAG, "wifi_init_ap finished. SSID:%s password:%s",
@@ -163,6 +150,9 @@ static void wifi_init_ap(app_config_t *config) // Made static
 
 void wifi_manager_init(app_config_t *config) {
     global_app_config = config; // Store config globally if needed by event handlers or other functions
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // Check if STA SSID is configured to decide between STA and AP mode
     if (strlen(config->sta_ssid) > 0 && strcmp(config->sta_ssid, "YOUR_STA_SSID") != 0) {
@@ -178,7 +168,6 @@ void wifi_manager_init(app_config_t *config) {
             ESP_LOGI(TAG, "STA mode connected successfully.");
         } else {
             ESP_LOGW(TAG, "STA mode failed to connect, falling back to AP mode.");
-            esp_wifi_stop();
             wifi_init_ap(config);
         }
     } else {
