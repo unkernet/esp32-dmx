@@ -1,4 +1,81 @@
-import { struct, u8, u16, u32, bool, cstr } from 'buffer-layout';
+function structSize(schema) {
+  let size = 0;
+  for (const [_, type] of schema) {
+    if (type === 'u8') size += 1;
+    else if (type === 'u16') size += 2;
+    else if (type === 'u32') size += 4;
+    else if (type[0] === 's') size += parseInt(type.slice(1), 10);
+    else throw new Error('unknown type: ' + type);
+  }
+  return size;
+}
+
+function decodeStruct(buffer, schema) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = 0;
+  const out = {};
+
+  for (const [name, type] of schema) {
+    if (type === 'u8') {
+      out[name] = view.getUint8(offset);
+      offset += 1;
+    } else if (type === 'u16') {
+      out[name] = view.getUint16(offset, true);
+      offset += 2;
+    } else if (type === 'u32') {
+      out[name] = view.getUint32(offset, true);
+      offset += 4;
+    } else if (type[0] === 's') {
+      const len = parseInt(type.slice(1), 10);
+      const slice = bytes.subarray(offset, offset + len);
+      const end = slice.indexOf(0);
+      const realEnd = end >= 0 ? end : len;
+      out[name] = new TextDecoder().decode(slice.subarray(0, realEnd));
+      offset += len;
+    } else {
+      throw new Error('unknown type: ' + type);
+    }
+  }
+
+  return out;
+}
+
+function encodeStruct(obj, schema) {
+  const size = structSize(schema);
+  const buffer = new ArrayBuffer(size);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = 0;
+
+  for (const [name, type] of schema) {
+    const value = obj[name];
+
+    if (type === 'u8') {
+      view.setUint8(offset, value);
+      offset += 1;
+    } else if (type === 'u16') {
+      view.setUint16(offset, value, true);
+      offset += 2;
+    } else if (type === 'u32') {
+      view.setUint32(offset, value, true);
+      offset += 4;
+    } else if (type[0] === 's') {
+      const len = parseInt(type.slice(1), 10);
+      const enc = new TextEncoder().encode(value || '');
+      const n = Math.min(enc.length, len - 1);
+      bytes.set(enc.subarray(0, n), offset);
+      bytes[offset + n] = 0;    // null-termination
+      for (let i = offset + n + 1; i < offset + len; i++) bytes[i] = 0;
+      offset += len;
+    } else {
+      throw new Error('unknown type: ' + type);
+    }
+  }
+
+  return buffer;
+}
+
 
 // Helper function to convert IP address from uint32 to string
 function uint32ToIp(uint32) {
@@ -32,33 +109,32 @@ function formatIpCidr(ipUint32, cidrLen) {
     return `${uint32ToIp(ipUint32)}/${cidrLen}`;
 }
 
-// Define the layout for app_config_t, matching the C struct
-const AppConfigLayout = struct([
-    cstr('sta_ssid', 33), // MAX_SSID_LEN + 1
-    cstr('sta_password', 65), // MAX_PASSWORD_LEN + 1
-    bool('sta_dhcp_enabled'),
-    u32('sta_ip'),
-    u8('sta_netmask_len'),
-    u32('sta_gateway'),
+const struct = [
+  ['sta_ssid', 's33'],
+  ['sta_password', 's65'],
+  ['sta_dhcp_enabled', 'u8'],
+  ['sta_ip', 'u32'],
+  ['sta_netmask_len', 'u8'],
+  ['sta_gateway', 'u32'],
 
-    cstr('ap_ssid', 33), // MAX_SSID_LEN + 1
-    cstr('ap_password', 65), // MAX_PASSWORD_LEN + 1
-    u32('ap_ip'),
-    u8('ap_netmask_len'),
-    u32('ap_gateway'),
+  ['ap_ssid', 's33'],
+  ['ap_password', 's65'],
+  ['ap_ip', 'u32'],
+  ['ap_netmask_len', 'u8'],
+  ['ap_gateway', 'u32'],
 
-    u16('ble_interval'),
-    u32('ble_duration_ms'),
-    u8('ambitful_universe'),
-    u16('ambitful_addr'),
-    u8('ambitful_channels'),
-    u8('ambitful_groups'),
+  ['ble_interval', 'u16'],
+  ['ble_duration_ms', 'u32'],
+  ['ambitful_universe', 'u8'],
+  ['ambitful_addr', 'u16'],
+  ['ambitful_channels', 'u8'],
+  ['ambitful_groups', 'u8'],
 
-    u8('dmx_in_universe'),
-    u8('dmx_out_universe'),
+  ['dmx_in_universe', 'u8'],
+  ['dmx_out_universe', 'u8'],
 
-    u8('ws2812_universe'),
-]);
+  ['ws2812_universe', 'u8']
+];
 
 document.addEventListener('DOMContentLoaded', async function() {
     const form = document.getElementById('configForm');
@@ -71,7 +147,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const buffer = await response.arrayBuffer();
-        const config = AppConfigLayout.decode(new Uint8Array(buffer));
+        const config = decodeStruct(buffer, struct);
         oldConfig = config;
 
         // Populate form fields
@@ -103,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const newConfig = {
             sta_ssid: document.getElementById('sta_ssid').value,
             sta_password: document.getElementById('sta_password').value,
-            sta_dhcp_enabled: document.getElementById('sta_dhcp_enabled').checked,
+            sta_dhcp_enabled: document.getElementById('sta_dhcp_enabled').checked ? 1 : 0,
             sta_ip: staIpCidr.ip,
             sta_netmask_len: staIpCidr.cidr,
             sta_gateway: ipToUint32(document.getElementById('sta_gateway').value),
@@ -118,8 +194,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             ble_duration_ms: parseInt(document.getElementById('ble_duration_ms').value, 10),
         };
 
-        const buffer = new Uint8Array(AppConfigLayout.span);
-        AppConfigLayout.encode({ ...oldConfig, ...newConfig }, buffer);
+        const buffer = encodeStruct({ ...oldConfig, ...newConfig }, struct);
 
         try {
             const response = await fetch('/config', {
