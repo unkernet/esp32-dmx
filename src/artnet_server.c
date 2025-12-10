@@ -8,11 +8,12 @@
 #include "globals.h"
 #include "esp_netif.h"
 #include "esp_mac.h"
+#include "web_server.h"
+#include "ambitful_ble.h"
 
 static const char *TAG = "ARTNET_SERVER";
 
-ws_client_info_t ws_clients[MAX_WS_CLIENTS];
-int ws_clients_count = 0;
+static app_config_t *app_config;
 
 // Art-Net Constants
 #define ARTNET_PORT 6454
@@ -27,32 +28,32 @@ int ws_clients_count = 0;
 // Art-Net Packet Structures (simplified for relevant fields)
 typedef struct __attribute__((packed)) {
     char id[ARTNET_ID_LENGTH];
-    uint16_t opcode;
-    uint16_t prot_ver;
+    uint16_t opcode; // LE
+    uint16_t prot_ver; // BE
 } artnet_header_t;
 
 typedef struct __attribute__((packed)) {
     artnet_header_t header;
-    uint8_t talk_to_me;
+    uint8_t flags;
     uint8_t priority;
 } artpoll_packet_t;
 
 typedef struct __attribute__((packed)) {
     char id[ARTNET_ID_LENGTH];
-    uint16_t opcode;
+    uint16_t opcode; // LE
     uint32_t ip_address;
-    uint16_t port;
-    uint16_t vers_info;
+    uint16_t port; // LE
+    uint16_t vers_info; // BE
     uint8_t net_sw;
     uint8_t sub_sw;
-    uint16_t oem;
+    uint16_t oem; // BE
     uint8_t ubea_version;
     uint8_t status1;
-    uint16_t esta_mfg;
+    uint16_t esta_mfg; // LE
     char short_name[18];
     char long_name[64];
     char node_report[64];
-    uint16_t num_ports;
+    uint16_t num_ports; // BE
     uint8_t port_types[4];
     uint8_t good_input[4];
     uint8_t good_output[4];
@@ -68,7 +69,7 @@ typedef struct __attribute__((packed)) {
     uint8_t bind_index;
     uint8_t status2;
     uint8_t filler_1[13];
-    uint16_t refresh_rate;
+    uint16_t refresh_rate; // BE
     uint8_t filler_2[11];
 } artpollreply_packet_t;
 
@@ -76,8 +77,9 @@ typedef struct __attribute__((packed)) {
     artnet_header_t header;
     uint8_t sequence;
     uint8_t physical;
-    uint16_t universe;
-    uint16_t length;
+    uint8_t universe;
+    uint8_t sub_universe;
+    uint16_t length; // BE
     uint8_t data[512];
 } artdmx_packet_t;
 
@@ -85,7 +87,6 @@ typedef struct __attribute__((packed)) {
 #define ARTNET_NODE_SHORT_NAME "ESP32 DMX"
 #define ARTNET_NODE_LONG_NAME "ESP32 DMX Art-Net Node"
 #define ARTNET_NODE_REPORT "#0001 0000 OK"
-#define ARTNET_LISTEN_UNIVERSE 0 // Hardcoded for now
 
 static void send_artpollreply(int sock, const struct sockaddr_in *source_addr) {
     artpollreply_packet_t reply = {
@@ -103,8 +104,8 @@ static void send_artpollreply(int sock, const struct sockaddr_in *source_addr) {
         .port_types = {0xC0, 0, 0, 0}, // DMX512, Output, Input
         .good_input = {0x80, 0, 0, 0}, // Data received, no errors
         .good_output = {0x80, 0, 0, 0}, // Data transmitted, no errors
-        .sw_in = {ARTNET_LISTEN_UNIVERSE, 0, 0, 0},
-        .sw_out = {ARTNET_LISTEN_UNIVERSE, 0, 0, 0}, // Universe we are listening to
+        .sw_in = {app_config->dmx_in_universe, 0, 0, 0},
+        .sw_out = {app_config->dmx_out_universe, 0, 0, 0},
         .acn_priority = 0,
         .sw_macro = 0,
         .sw_remote = 0,
@@ -162,44 +163,14 @@ send_reply_final:
 }
 
 static void handle_artdmx(const artdmx_packet_t *dmx_packet) {
-    uint16_t universe = dmx_packet->universe;
+    uint8_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
 
     // ESP_LOGD(TAG, "Received ArtDMX for Universe %d, Length %d, Sequence %d",
     //             universe, length, dmx_packet->sequence);
 
-    if (universe == ARTNET_LISTEN_UNIVERSE) {
-
-        // Forward DMX data to WebSocket clients
-        if (ws_clients_count > 0) {
-            // Create a JSON string for DMX data
-            // Example: {"universe": 0, "data": [0, 128, 255, ...]}
-            char *json_buf = NULL;
-            size_t json_buf_len = snprintf(NULL, 0, "{\"universe\":%d,\"data\":[", universe) + (length * 4) + 2 + 1; // Approx size
-            json_buf = (char*)malloc(json_buf_len);
-            if (json_buf) {
-                char *ptr = json_buf;
-                ptr += sprintf(ptr, "{\"universe\":%d,\"data\":[", universe);
-                for (int i = 0; i < length; i++) {
-                    ptr += sprintf(ptr, "%d%s", dmx_packet->data[i], (i == length - 1) ? "" : ",");
-                }
-                sprintf(ptr, "]}");
-
-                httpd_ws_frame_t ws_pkt;
-                memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-                ws_pkt.payload = (uint8_t*)json_buf;
-                ws_pkt.len = strlen(json_buf);
-                ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-                for (int i = 0; i < ws_clients_count; i++) {
-                    httpd_ws_send_frame_async(ws_clients[i].handle, ws_clients[i].fd, &ws_pkt);
-                }
-                free(json_buf);
-            } else {
-                ESP_LOGE(TAG, "Failed to allocate JSON buffer for DMX data");
-            }
-        }
-    }
+    send_ws_dmx_data(universe, dmx_packet->data, length);
+    send_ambitful_dmx_data(universe, dmx_packet->data, length);
 }
 
 static void handle_artnet_packet(int sock, const char *rx_buffer, int len, const struct sockaddr_in *source_addr) {
@@ -281,4 +252,14 @@ void artnet_server_task(void *pvParameters)
         }
     }
     vTaskDelete(NULL);
+}
+
+esp_err_t start_artnet_server(app_config_t *config) {
+    app_config = config;
+    xTaskCreate(artnet_server_task, "artnet_server", 4096, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
+    //
 }

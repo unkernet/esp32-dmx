@@ -9,11 +9,16 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "artnet_server.h"
-#include "ble_beacon.h"
+#include "ambitful_ble.h"
+#include "app_config.h"
+#include "app_config_nvs.h"
 
 #define BLINK_GPIO GPIO_NUM_8
 
 static const char *TAG = "MAIN";
+
+// Global application configuration
+app_config_t app_config;
 
 void blink_led(int times) {
     for (int i = 0; i < times; i++) {
@@ -38,12 +43,16 @@ void app_main() {
     gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
     blink_led(2);
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+    // Initialize NVS
+    ESP_ERROR_CHECK(app_config_nvs_init());
+
+    // Load application configuration
+    esp_err_t err = app_config_load(&app_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to load configuration from NVS (%s), using default values.", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Configuration loaded successfully from NVS.");
     }
-    ESP_ERROR_CHECK(ret);
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -52,7 +61,7 @@ void app_main() {
       .format_if_mount_failed = true
     };
     
-    ret = esp_vfs_spiffs_register(&conf);
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
     if (ret != ESP_OK) {
         if (ret == ESP_FAIL) {
@@ -65,18 +74,8 @@ void app_main() {
         return;
     }
 
-    ble_beacon_init();
-
-    char ssid[32];
-    char password[64];
-
-    if (read_wifi_config(ssid, sizeof(ssid), password, sizeof(password)) == ESP_OK) {
-        ESP_LOGI(TAG, "Found stored WiFi config: SSID=%s", ssid);
-        wifi_init_sta(ssid, password);
-    } else {
-        ESP_LOGI(TAG, "No WiFi config found, starting AP mode.");
-        wifi_init_ap();
-    }
-    start_webserver();
-    xTaskCreate(artnet_server_task, "artnet_server", 4096, NULL, 5, NULL);
+    wifi_manager_init(&app_config);
+    ambitful_ble_init(&app_config);
+    start_webserver(&app_config); // Pass config to webserver
+    start_artnet_server(&app_config);
 }

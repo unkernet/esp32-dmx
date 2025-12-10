@@ -1,18 +1,22 @@
-#include "ble_beacon.h"
+#include "ambitful_ble.h"
 #include "esp_log.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "NIMBLE_BEACON";
 
 static uint8_t g_beacon_data[31];
 static ble_addr_t ble_addr;
 static uint8_t g_beacon_data_len = 0;
+static app_config_t *app_config;
 
 static void ble_app_advertise(void);
 static void set_fields();
+
 static void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "BLE host synchronized.");
@@ -35,9 +39,7 @@ static void set_fields() {
     } else {
         ESP_LOGI(TAG, "ble_gap_adv_set_fields successfully");
     }
-    // ble_addr_t ble_addr;
     ble_addr.val[0]++;
-    // rc = ble_hs_id_gen_rnd(0, &ble_addr);
     rc = ble_hs_id_set_rnd(ble_addr.val);
     if (rc != 0) {
         ESP_LOGE(TAG, "error ble_hs_id_set_rnd; rc=%d", rc);
@@ -72,20 +74,21 @@ static void ble_app_advertise(void)
     struct ble_gap_adv_params params = {
         .conn_mode = BLE_GAP_CONN_MODE_NON,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
-        .itvl_min = 0x20, /* 50 ms */
-        .itvl_max = 0x20,
+        .itvl_min = app_config->ble_interval / 0.625, // Convert ms to 0.625ms units
+        .itvl_max = app_config->ble_interval / 0.625,
     };
 
     int rc;
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, (25000),
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms,
                       &params, gap_event, NULL);
 
     if (rc != 0) {
         ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
         return;
     }
-    ESP_LOGI(TAG, "Advertising started successfully.");
+    ESP_LOGI(TAG, "Advertising started successfully with interval %dms and duration %dms.",
+             app_config->ble_interval, app_config->ble_duration_ms);
 }
 
 void ble_beacon_task(void *param)
@@ -101,21 +104,17 @@ esp_err_t ble_beacon_set_data(const uint8_t* data, uint8_t data_len)
     }
     memcpy(g_beacon_data, data, data_len);
     g_beacon_data_len = data_len;
-    // set_fields();
-    // ble_app_advertise();
     return ESP_OK;
 }
 
-esp_err_t ble_beacon_init(void)
+esp_err_t ambitful_ble_init(app_config_t *config)
 {
+    app_config = config; // Store config globally
+
     nimble_port_init();
 
     ble_hs_cfg.sync_cb = ble_app_on_sync;
 
-    // <Buffer 4c 00 02 15
-    // ab 14 03 00 64 ff ff ff
-    // 00 00 00 11 22 ba 09 07
-    // 00 0a 00 6e c5>
     // Default iBeacon data
     uint8_t ibeacon_data[] = {
         0x4C, 0x00, 0x02, 0x15, 
@@ -128,4 +127,10 @@ esp_err_t ble_beacon_init(void)
     nimble_port_freertos_init(ble_beacon_task);
 
     return ESP_OK;
+}
+
+void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
+    if (app_config == NULL || app_config->ambitful_universe != universe) {
+        return;
+    }
 }
