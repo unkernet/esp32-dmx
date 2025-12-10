@@ -12,28 +12,19 @@
 #include "ambitful_ble.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
+#include "mdns.h"
 
 #define BLINK_GPIO GPIO_NUM_8
 
 static const char *TAG = "MAIN";
 
-// Global application configuration
 app_config_t app_config;
-
-void blink_led(int times) {
-    for (int i = 0; i < times; i++) {
-        gpio_set_level(BLINK_GPIO, 1);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-        gpio_set_level(BLINK_GPIO, 0);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
-}
 
 void app_main() {
     #if CONFIG_PM_ENABLE
         esp_pm_config_t pm_config = {
             .max_freq_mhz = 160,
-            .min_freq_mhz = 160,
+            .min_freq_mhz = 80,
             .light_sleep_enable = false
         };
         ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
@@ -41,7 +32,7 @@ void app_main() {
 
     gpio_reset_pin(BLINK_GPIO);
     gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
-    blink_led(2);
+    gpio_set_level(BLINK_GPIO, 1);
 
     // Initialize NVS
     ESP_ERROR_CHECK(app_config_nvs_init());
@@ -76,6 +67,7 @@ void app_main() {
 
     wifi_manager_init(&app_config);
     ambitful_ble_init(&app_config);
-    start_webserver(&app_config); // Pass config to webserver
+    start_webserver(&app_config);
     start_artnet_server(&app_config);
+    start_mdns();
 }
