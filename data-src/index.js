@@ -127,7 +127,7 @@ const struct = [
   ['ble_duration_ms', 'u32'],
   ['ambitful_universe', 'u8'],
   ['ambitful_addr', 'u16'],
-  ['ambitful_channels', 'u8'],
+  ['ambitful_channel', 'u8'],
   ['ambitful_groups', 'u8'],
 
   ['dmx_in_universe', 'u8'],
@@ -164,6 +164,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         document.getElementById('ble_interval').value = config.ble_interval;
         document.getElementById('ble_duration_ms').value = config.ble_duration_ms;
+        document.getElementById('ambitful_universe').value = config.ambitful_universe;
+        document.getElementById('ambitful_addr').value = config.ambitful_addr;
+        document.getElementById('ambitful_channel').value = config.ambitful_channel;
+        document.getElementById('ambitful_groups').value = config.ambitful_groups;
 
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -192,6 +196,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             ble_interval: parseInt(document.getElementById('ble_interval').value, 10),
             ble_duration_ms: parseInt(document.getElementById('ble_duration_ms').value, 10),
+            ambitful_universe: parseInt(document.getElementById('ambitful_universe').value, 10),
+            ambitful_addr: parseInt(document.getElementById('ambitful_addr').value, 10),
+            ambitful_channel: parseInt(document.getElementById('ambitful_channel').value, 10),
+            ambitful_groups: parseInt(document.getElementById('ambitful_groups').value, 10),
         };
 
         const buffer = encodeStruct({ ...oldConfig, ...newConfig }, struct);

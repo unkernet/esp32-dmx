@@ -30,8 +30,8 @@ typedef struct __attribute__((packed)) {
     uint32_t ble_duration_ms;   // Advertising duration in ms (0 for indefinite)
     uint8_t ambitful_universe;
     uint16_t ambitful_addr; // First DMX address
-    uint8_t ambitful_channels; // Amount of used ambitful channels
-    uint8_t ambitful_groups; // Amount groups per channel
+    uint8_t ambitful_channel; // Used channel
+    uint8_t ambitful_groups; // Amount of used groups
 
     // DMX settings
     uint8_t dmx_in_universe;

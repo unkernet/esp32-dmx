@@ -196,9 +196,15 @@ send_reply_final:
     xTaskNotifyGive(send_task);
 }
 
-static void handle_artdmx(const artdmx_packet_t *dmx_packet) {
+static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
     uint8_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
+
+    if (len < sizeof(artdmx_packet_t) - (512 - length)) {
+        ESP_LOGW(TAG, "Received malformed ArtDMX packet (len: %d)", len);
+        // Received malformed ArtDMX packet
+        return;
+    }
 
     send_ws_dmx_data(universe, dmx_packet->data, length);
     send_ambitful_dmx_data(universe, dmx_packet->data, length);
@@ -222,16 +228,24 @@ static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr
             send_artpollreply(sock, source_addr);
             break;
         case ARTNET_OP_DMX:
-            if (len >= sizeof(artdmx_packet_t) - (512 - ((artdmx_packet_t*)rx_buffer)->length)) { // Ensure packet is long enough
-                handle_artdmx((artdmx_packet_t *)rx_buffer);
-            } else {
-                ESP_LOGW(TAG, "Received malformed ArtDMX packet (len: %d)", len);
-            }
+            handle_artdmx((artdmx_packet_t *)rx_buffer, len);
             break;
         default:
             // ESP_LOGD(TAG, "Received unknown Art-Net opcode: 0x%04X", header->opcode);
             break;
     }
+}
+
+static void artnet_parser_task(void *pvParameters)
+{
+    udp_packet_t buffer;
+    while (1) {
+        if (pdPASS == xQueueReceive(udpQueue, &buffer, portMAX_DELAY)) {
+            handle_artnet_packet(buffer.buffer, buffer.len, &buffer.source_addr);
+        }
+    }
+    vTaskDelete(NULL);
+    
 }
 
 static void artnet_sender_task(void *pvParameters)
@@ -247,18 +261,6 @@ static void artnet_sender_task(void *pvParameters)
         }
     }
     vTaskDelete(NULL);
-}
-
-static void artnet_parser_task(void *pvParameters)
-{
-    udp_packet_t buffer;
-    while (1) {
-        if (pdPASS == xQueueReceive(udpQueue, &buffer, portMAX_DELAY)) {
-            handle_artnet_packet(buffer.buffer, buffer.len, &buffer.source_addr);
-        }
-    }
-    vTaskDelete(NULL);
-    
 }
 
 static void artnet_server_task(void *pvParameters)
