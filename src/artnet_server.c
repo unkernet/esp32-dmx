@@ -5,7 +5,6 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "artnet_server.h"
-#include "globals.h"
 #include "esp_netif.h"
 #include "esp_mac.h"
 #include "web_server.h"

@@ -22,14 +22,15 @@ static SemaphoreHandle_t s_ble_data_mutex;
 
 static uint8_t counter = 0; // 0-222
 static uint8_t ibeacon_data[] = {
+    // Header
     0x4C, 0x00, 0x02, 0x15, 
-
+    // Body
     0xAB, 0 /* channel, group */, 3, 0,
     0x64, 0xFF,
     0xFF, 0xFF,
     0x00, 0x00,
     0x00, 0x11, 0x22, 0xBA, 0 /* counter */, 0 /* power */,
-
+    // Footer
     0x00, 0x0A, 0x00, 0x6E, 0xC5 // mMajor, mMinor, mTxPower
 };
 static ble_addr_t ble_addr;
@@ -93,9 +94,9 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { //
     // 0, 0,
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 100 + 128) >> 8; // 0-100
-    cct = ((cct * 60 + 128) >> 8) + 25; // 25 - 85
-    rg = (power * 20 + 128) >> 8; // 0-20
+    power = (power * 101) >> 8; // 0-100
+    cct = ((cct * 61) >> 8) + 25; // 25 - 85
+    rg = (rg * 21) >> 8; // 0-20
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -108,15 +109,15 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { //
     ibeacon_data[10] = 0;
     ibeacon_data[11] = rg;
 
-    ibeacon_data[10] = 0;
-    ibeacon_data[11] = 0;
-
     ibeacon_data[12] = 0;
-    ibeacon_data[13] = 0; // mode
-    ibeacon_data[14] = 2;
-    // ibeacon_data[15] = 0xBA;
-    ibeacon_data[16] = counter;
-    ibeacon_data[17] = power;
+    ibeacon_data[13] = 0;
+
+    ibeacon_data[14] = 0;
+    ibeacon_data[15] = 0; // mode
+    ibeacon_data[16] = 2;
+    // ibeacon_data[17] = 0xBA;
+    ibeacon_data[18] = counter;
+    ibeacon_data[19] = power;
 }
 
 static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mode 1
@@ -127,9 +128,9 @@ static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mo
     // Integer.valueOf(getHue()),
     // Byte.valueOf((byte) getSta()), Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 100 + 128) >> 8; // 0-100
-    s = (s * 100 + 128) >> 8; // 0-100
-    uint16_t hue = ((uint32_t)h * 360 + 128) >> 8; // 0 - 359
+    power = (power * 101) >> 8; // 0-100
+    s = (s * 101) >> 8; // 0-100
+    uint16_t hue = ((uint32_t)h * 361) >> 8; // 0 - 359
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -142,15 +143,15 @@ static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mo
     ibeacon_data[10] = 0;
     ibeacon_data[11] = 0;
 
-    ibeacon_data[10] = hue >> 8;
-    ibeacon_data[11] = hue;
+    ibeacon_data[12] = hue >> 8;
+    ibeacon_data[13] = hue;
 
-    ibeacon_data[12] = s;
-    ibeacon_data[13] = 1; // mode
-    ibeacon_data[14] = 2;
-    // ibeacon_data[15] = 0xBA;
-    ibeacon_data[16] = counter;
-    ibeacon_data[17] = power;
+    ibeacon_data[14] = s;
+    ibeacon_data[15] = 1; // mode
+    ibeacon_data[16] = 2;
+    // ibeacon_data[17] = 0xBA;
+    ibeacon_data[18] = counter;
+    ibeacon_data[19] = power;
 }
 
 static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) { // mode 2
@@ -161,7 +162,7 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     // 0, 0,
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 100 + 128) >> 8;; // 0-100
+    power = (power * 101) >> 8; // 0-100
     scene = scene / 10; // 0-25
     speed = ((speed * 3) >> 8) + 1; // 1-3
 
@@ -176,15 +177,15 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     ibeacon_data[10] = scene;
     ibeacon_data[11] = 0;
 
-    ibeacon_data[10] = 0;
-    ibeacon_data[11] = 0;
-
     ibeacon_data[12] = 0;
-    ibeacon_data[13] = 2; // mode
-    ibeacon_data[14] = 2;
-    // ibeacon_data[15] = 0xBA;
-    ibeacon_data[16] = counter;
-    ibeacon_data[17] = power;
+    ibeacon_data[13] = 0;
+
+    ibeacon_data[14] = 0;
+    ibeacon_data[15] = 2; // mode
+    ibeacon_data[16] = 2;
+    // ibeacon_data[17] = 0xBA;
+    ibeacon_data[18] = counter;
+    ibeacon_data[19] = power;
 }
 
 static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint8_t y) { // mode 5
@@ -195,12 +196,12 @@ static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t
     // Integer.valueOf(getW()), Integer.valueOf(getY()),
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 100 + 128) >> 8; // 0-100
-    r = (r * 100 + 128) >> 8; // 0-100
-    g = (g * 100 + 128) >> 8; // 0-100
-    b = (b * 100 + 128) >> 8; // 0-100
-    w = (w * 100 + 128) >> 8; // 0-100
-    y = (y * 100 + 128) >> 8; // 0-100
+    power = (power * 101) >> 8; // 0-100
+    r = (r * 101) >> 8; // 0-100
+    g = (g * 101) >> 8; // 0-100
+    b = (b * 101) >> 8; // 0-100
+    w = (w * 101) >> 8; // 0-100
+    y = (y * 101) >> 8; // 0-100
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -213,15 +214,15 @@ static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t
     ibeacon_data[10] = g;
     ibeacon_data[11] = b;
 
-    ibeacon_data[10] = w;
-    ibeacon_data[11] = y;
+    ibeacon_data[12] = w;
+    ibeacon_data[13] = y;
 
-    ibeacon_data[12] = 0;
-    ibeacon_data[13] = 5; // mode
-    ibeacon_data[14] = 2;
-    // ibeacon_data[15] = 0xBA;
-    ibeacon_data[16] = counter;
-    ibeacon_data[17] = power; // 0-100
+    ibeacon_data[14] = 0;
+    ibeacon_data[15] = 5; // mode
+    ibeacon_data[16] = 2;
+    // ibeacon_data[17] = 0xBA;
+    ibeacon_data[18] = counter;
+    ibeacon_data[19] = power;
 }
 
 static void ble_app_on_sync(void)
@@ -263,11 +264,14 @@ static void adv_next_group() {
     uint8_t ambitful_groups = app_config->ambitful_groups;
     uint8_t group;
     uint8_t * group_data;
+    // First, we need to find a group with max priproty
     for (group = 0; group < ambitful_groups; group ++) {
         if (max_priority < groups_priority[group]) {
             max_priority = groups_priority[group];
         }
     }
+    // Second pass, we look for the group with max_priority, placed after ambitful_last_transmitted_group
+    // We need this to prevent stuck in transmitting only the first group if all groups have minimum priority (0)
     for (group = ambitful_last_transmitted_group + 1; group != ambitful_last_transmitted_group; group++) {
         if (group >= ambitful_groups) {
             group = 0;
@@ -317,16 +321,18 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 static void ble_app_advertise(void)
 {
+    // In idle mode, when there are no changes for a same time, make advertisement IDLE_SLOW_DOWN slower
+    uint8_t mult = ambitful_idle_mode * IDLE_SLOW_DOWN + 1;
     struct ble_gap_adv_params params = {
         .conn_mode = BLE_GAP_CONN_MODE_NON,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
-        .itvl_min = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1)),
-        .itvl_max = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1)),
+        .itvl_min = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * mult),
+        .itvl_max = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * mult),
     };
 
     int rc;
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1),
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms * mult,
                       &params, gap_event, NULL);
 
     if (rc != 0) {
@@ -369,17 +375,21 @@ esp_err_t ambitful_ble_init(app_config_t *config)
 
 void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
     uint8_t ambitful_groups = app_config->ambitful_groups;
+    uint16_t ambitful_addr = app_config->ambitful_addr;
     if (ambitful_groups > MAX_AMBITFUL_GROUPS) {
         ambitful_groups = MAX_AMBITFUL_GROUPS;
     }
+    if (ambitful_addr + ambitful_groups * AMBITFUL_SIZE > 512) {
+        ambitful_groups = 0; // Invalid configuration, disable
+    }
     if (app_config == NULL || app_config->ambitful_channel == 0 ||  ambitful_groups == 0 || app_config->ambitful_universe != universe
-        || length < (uint16_t)(app_config->ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
+        || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
         return;
     }
     if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {
         return;
     }
-    data += app_config->ambitful_addr;
+    data += ambitful_addr;
     uint8_t changed = 0;
     for (uint8_t i = 0; i < ambitful_groups; i++) {
         if (memcmp(ambitful_data + i * AMBITFUL_SIZE, data + i * AMBITFUL_SIZE, AMBITFUL_SIZE) != 0) {

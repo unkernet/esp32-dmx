@@ -20,7 +20,7 @@ const int WIFI_CONNECTED_BIT = BIT0;
 const int WIFI_FAIL_BIT = BIT1;
 
 static int s_retry_num = 0;
-static app_config_t *global_app_config; // Pointer to the global configuration
+static app_config_t *app_config; // Pointer to the global configuration
 
 extern void blink_led(int times);
 
@@ -149,7 +149,7 @@ static void wifi_init_ap(app_config_t *config) // Made static
 }
 
 void wifi_manager_init(app_config_t *config) {
-    global_app_config = config; // Store config globally if needed by event handlers or other functions
+    app_config = config; // Store config globally if needed by event handlers or other functions
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());

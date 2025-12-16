@@ -9,7 +9,6 @@
 #include "web_server.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
-#include "globals.h"
 #include "artnet_server.h"
 #include "ambitful_ble.h"
 #include "dmx.h"
