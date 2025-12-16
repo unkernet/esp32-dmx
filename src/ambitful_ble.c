@@ -7,16 +7,21 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "NIMBLE_BEACON";
+static const char *TAG = "AMBUTFUL";
 
 #define MAX_AMBITFUL_GROUPS (8)
 #define AMBITFUL_SIZE (8)
-#define MAX_AMBITFUL_PRIORITY (8)
-uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
-uint8_t ambitful_data[MAX_AMBITFUL_GROUPS * AMBITFUL_SIZE];
-uint8_t last_transmitted_group = 0;
-uint8_t counter = 0; // 0-222
-uint8_t ibeacon_data[] = {
+#define MAX_AMBITFUL_PRIORITY (4)
+#define IDLE_SLOW_DOWN (5)
+
+static uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
+static uint8_t ambitful_data[MAX_AMBITFUL_GROUPS * AMBITFUL_SIZE];
+static uint8_t ambitful_last_transmitted_group = 0;
+static uint8_t ambitful_idle_mode = 0;
+static SemaphoreHandle_t s_ble_data_mutex;
+
+static uint8_t counter = 0; // 0-222
+static uint8_t ibeacon_data[] = {
     0x4C, 0x00, 0x02, 0x15, 
 
     0xAB, 0 /* channel, group */, 3, 0,
@@ -80,7 +85,7 @@ static void mode_on() {
   power_mode(4);
 }
 
-static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t cctType, uint8_t rg) { // mode 0
+static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { // mode 0
     // tring.format("%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%04X%02X%02X%02X",
     // (byte) -85, Integer.valueOf(i3), Integer.valueOf(getMode()), Integer.valueOf(getCCT()),
     // Integer.valueOf(power), Integer.valueOf(getCCTType()),
@@ -88,9 +93,9 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t cctType,
     // 0, 0,
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 101) >> 8; // 0-100
-    cct = ((cct * 61) >> 8) + 25; // 25 - 85
-    rg = (power * 21) >> 8; // 0-20
+    power = (power * 100 + 128) >> 8; // 0-100
+    cct = ((cct * 60 + 128) >> 8) + 25; // 25 - 85
+    rg = (power * 20 + 128) >> 8; // 0-20
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -122,9 +127,9 @@ static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mo
     // Integer.valueOf(getHue()),
     // Byte.valueOf((byte) getSta()), Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 101) >> 8; // 0-100
-    s = (s * 101) >> 8; // 0-100
-    uint16_t hue = (h * 180) >> 7; // 0 - 359
+    power = (power * 100 + 128) >> 8; // 0-100
+    s = (s * 100 + 128) >> 8; // 0-100
+    uint16_t hue = ((uint32_t)h * 360 + 128) >> 8; // 0 - 359
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -156,7 +161,7 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     // 0, 0,
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
-    power = (power * 101) >> 8; // 0-100
+    power = (power * 100 + 128) >> 8;; // 0-100
     scene = scene / 10; // 0-25
     speed = ((speed * 3) >> 8) + 1; // 1-3
 
@@ -190,19 +195,26 @@ static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t
     // Integer.valueOf(getW()), Integer.valueOf(getY()),
     // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
 
+    power = (power * 100 + 128) >> 8; // 0-100
+    r = (r * 100 + 128) >> 8; // 0-100
+    g = (g * 100 + 128) >> 8; // 0-100
+    b = (b * 100 + 128) >> 8; // 0-100
+    w = (w * 100 + 128) >> 8; // 0-100
+    y = (y * 100 + 128) >> 8; // 0-100
+
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
     ibeacon_data[6] = 5; // mode
     ibeacon_data[7] = 0;
 
-    ibeacon_data[8] = power; // 0-100
-    ibeacon_data[9] = r; // 0-100
+    ibeacon_data[8] = power;
+    ibeacon_data[9] = r;
 
-    ibeacon_data[10] = g; // 0-100
-    ibeacon_data[11] = b; // 0-100
+    ibeacon_data[10] = g;
+    ibeacon_data[11] = b;
 
-    ibeacon_data[10] = w; // 0-100
-    ibeacon_data[11] = y; // 0-100
+    ibeacon_data[10] = w;
+    ibeacon_data[11] = y;
 
     ibeacon_data[12] = 0;
     ibeacon_data[13] = 5; // mode
@@ -244,45 +256,58 @@ static void set_fields() {
     }
 }
 
+static void adv_next_group() {
+    xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
+
+    uint8_t max_priority = 0;
+    uint8_t ambitful_groups = app_config->ambitful_groups;
+    uint8_t group;
+    uint8_t * group_data;
+    for (group = 0; group < ambitful_groups; group ++) {
+        if (max_priority < groups_priority[group]) {
+            max_priority = groups_priority[group];
+        }
+    }
+    for (group = ambitful_last_transmitted_group + 1; group != ambitful_last_transmitted_group; group++) {
+        if (group >= ambitful_groups) {
+            group = 0;
+        }
+        if (max_priority == groups_priority[group]) {
+            break;
+        }
+    }
+    if (groups_priority[group] > 0) {
+        --groups_priority[group];
+    } 
+    if (max_priority == 0) {
+        ambitful_idle_mode = 1;
+    }
+    ambitful_last_transmitted_group = group;
+    group_data = &ambitful_data[group * AMBITFUL_SIZE];
+
+    uint8_t mode = group_data[0];
+    if (mode < 64) {
+        mode_rgb(group, group_data[1], group_data[2], group_data[3], group_data[4], group_data[5], group_data[6]);
+    } else if (mode < 64 * 2) {
+        mode_hsl(group, group_data[1], group_data[2], group_data[3]);
+    } else if (mode < 64 * 3) {
+        mode_cct(group, group_data[1], group_data[2], group_data[3]);
+    } else {
+        mode_fx(group, group_data[1], group_data[2], group_data[3]);
+    }
+
+    xSemaphoreGive(s_ble_data_mutex);
+
+    set_fields();
+    ble_app_advertise();
+}
+
 /* GAP event handler */
 static int gap_event(struct ble_gap_event *event, void *arg)
 {
     switch (event->type) {
         case BLE_GAP_EVENT_ADV_COMPLETE:
-
-            uint8_t max_priority = 0;
-            uint8_t ambitful_groups = app_config->ambitful_groups;
-            uint8_t group;
-            uint8_t * group_data;
-            for (group = 0; group < ambitful_groups; group ++) {
-                if (max_priority < groups_priority[group]) {
-                    max_priority = groups_priority[group];
-                }
-            }
-            for (group = last_transmitted_group + 1; group != last_transmitted_group; group++) {
-                if (group >= ambitful_groups) {
-                    group = 0;
-                }
-                if (max_priority == groups_priority[group]) {
-                    break;
-                }
-            }
-            last_transmitted_group = group;
-            group_data = &ambitful_data[group * AMBITFUL_SIZE];
-
-            uint8_t mode = group_data[0];
-            if (mode < 64) {
-                mode_rgb(group, group_data[1], group_data[2], group_data[3], group_data[4], group_data[5], group_data[6]);
-            } else if (mode < 64 * 2) {
-                mode_hsl(group, group_data[1], group_data[2], group_data[3]);
-            } else if (mode < 64 * 3) {
-                mode_cct(group, group_data[1], group_data[2], group_data[3], group_data[4]);
-            } else {
-                mode_fx(group, group_data[1], group_data[2], group_data[3]);
-            }
-
-            set_fields();
-            ble_app_advertise();
+            adv_next_group();
             return 0;
 
         default:
@@ -295,13 +320,13 @@ static void ble_app_advertise(void)
     struct ble_gap_adv_params params = {
         .conn_mode = BLE_GAP_CONN_MODE_NON,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
-        .itvl_min = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval),
-        .itvl_max = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval),
+        .itvl_min = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1)),
+        .itvl_max = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1)),
     };
 
     int rc;
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms,
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms * (ambitful_idle_mode * IDLE_SLOW_DOWN + 1),
                       &params, gap_event, NULL);
 
     if (rc != 0) {
@@ -329,6 +354,7 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     app_config = config; // Store config globally
     memset(groups_priority, 0, sizeof(groups_priority));
     memset(ambitful_data, 0, sizeof(ambitful_data));
+    s_ble_data_mutex = xSemaphoreCreateMutex();
 
     nimble_port_init();
 
@@ -350,6 +376,9 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
         || length < (uint16_t)(app_config->ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
         return;
     }
+    if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {
+        return;
+    }
     data += app_config->ambitful_addr;
     uint8_t changed = 0;
     for (uint8_t i = 0; i < ambitful_groups; i++) {
@@ -361,5 +390,10 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
     }
     if (changed) {
         increment_counter();
+        if (ambitful_idle_mode) {
+            ambitful_idle_mode = 0;
+            adv_next_group();
+        }
     }
+    xSemaphoreGive(s_ble_data_mutex);
 }

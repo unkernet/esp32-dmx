@@ -10,6 +10,8 @@
 #include "esp_mac.h"
 #include "web_server.h"
 #include "ambitful_ble.h"
+#include "dmx.h"
+#include "ws2812.h"
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
 
@@ -208,7 +210,9 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
 
     send_ws_dmx_data(universe, dmx_packet->data, length);
     send_ambitful_dmx_data(universe, dmx_packet->data, length);
-    // just for test
+    send_dmx_data(universe, dmx_packet->data, length);
+    send_ws2812_data(universe, dmx_packet->data, length);
+    // just for test, send back to ArtNet
     send_artnet_dmx_data(universe, dmx_packet->data, length, dmx_packet->sequence);
 }
 
@@ -340,6 +344,6 @@ void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t lengt
         s_artnet_packet_length = sizeof s_artnet_packet_out - (512 - length);
         s_artnet_reply_to = &broadcast_addr;
         xSemaphoreGive(s_dmx_data_mutex);
-        xTaskNotifyGive(send_task);;
+        xTaskNotifyGive(send_task);
     }
 }
