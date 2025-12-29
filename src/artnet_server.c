@@ -108,7 +108,7 @@ static artdmx_packet_t s_artnet_packet_out = {
     .sub_universe = 0, // Assuming sub-universe 0
 };
 static uint16_t s_artnet_packet_length;
-struct sockaddr_in * s_artnet_reply_to;
+struct sockaddr_in s_artnet_reply_to;
 static SemaphoreHandle_t s_dmx_data_mutex;
 static uint8_t sequence = 1;
 static TaskHandle_t srv_task = NULL, send_task = NULL;
@@ -131,9 +131,9 @@ static void send_artpollreply(int sock, struct sockaddr_in *source_addr) {
         return;
     }
     artpollreply_packet_t * reply = (artpollreply_packet_t *) &s_artnet_packet_out;
-    memset(reply + ARTNET_ID_LENGTH, sizeof(artpollreply_packet_t) - ARTNET_ID_LENGTH, 0);
+    memset(((uint8_t *)reply) + ARTNET_ID_LENGTH, 0, sizeof(artpollreply_packet_t) - ARTNET_ID_LENGTH);
     s_artnet_packet_length = sizeof(artpollreply_packet_t);
-    s_artnet_reply_to = source_addr;
+    s_artnet_reply_to = *source_addr;
 
     reply->opcode = ARTNET_OP_POLLREPLY;
     reply->port = ARTNET_PORT; // Port is 6454
@@ -222,7 +222,7 @@ static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr
 
     artnet_header_t *header = (artnet_header_t *)rx_buffer;
 
-    if (memcmp(header->id, ARTNET_ID, ARTNET_ID_LENGTH) != 0) {
+    if (memcmp(header->id, ARTNET_ID, ARTNET_ID_LENGTH) != 0 || ntohs(header->prot_ver) < 14) {
         return; // Not an Art-Net packet
     }
 
@@ -241,14 +241,13 @@ static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr
 
 static void artnet_parser_task(void *pvParameters)
 {
-    udp_packet_t buffer;
+    static udp_packet_t buffer;
     while (1) {
         if (pdPASS == xQueueReceive(udpQueue, &buffer, portMAX_DELAY)) {
             handle_artnet_packet(buffer.buffer, buffer.len, &buffer.source_addr);
         }
     }
     vTaskDelete(NULL);
-    
 }
 
 static void artnet_sender_task(void *pvParameters)
@@ -256,7 +255,7 @@ static void artnet_sender_task(void *pvParameters)
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)(pdMS_TO_TICKS(1000))) == pdTRUE) { // Try to take mutex, don't block indefinitely
-            int tx_err = sendto(sock, &s_artnet_packet_out, s_artnet_packet_length, 0, (struct sockaddr *)s_artnet_reply_to, sizeof(struct sockaddr_in));
+            int tx_err = sendto(sock, &s_artnet_packet_out, s_artnet_packet_length, 0, (struct sockaddr *)&s_artnet_reply_to, sizeof(struct sockaddr_in));
             if (tx_err < 0) {
                 ESP_LOGE(TAG, "Error sending Art-Net DMX broadcast: errno %d", errno);
             }
@@ -341,7 +340,7 @@ void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t lengt
         s_artnet_packet_out.length = htons(length);
         memcpy(s_artnet_packet_out.data, data, length);
         s_artnet_packet_length = sizeof s_artnet_packet_out - (512 - length);
-        s_artnet_reply_to = &broadcast_addr;
+        s_artnet_reply_to = broadcast_addr;
         xSemaphoreGive(s_dmx_data_mutex);
         xTaskNotifyGive(send_task);
     }
