@@ -154,18 +154,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.getElementById('sta_ssid').value = config.sta_ssid;
         document.getElementById('sta_password').value = config.sta_password;
         document.getElementById('sta_dhcp_enabled').checked = config.sta_dhcp_enabled;
-        document.getElementById('sta_ip_cidr').value = formatIpCidr(config.sta_ip, config.sta_netmask_len);
-        document.getElementById('sta_gateway').value = uint32ToIp(config.sta_gateway);
+        // document.getElementById('sta_ip_cidr').value = formatIpCidr(config.sta_ip, config.sta_netmask_len);
+        // document.getElementById('sta_gateway').value = uint32ToIp(config.sta_gateway);
 
         document.getElementById('ap_ssid').value = config.ap_ssid;
         document.getElementById('ap_password').value = config.ap_password;
         document.getElementById('ap_ip_cidr').value = formatIpCidr(config.ap_ip, config.ap_netmask_len);
         document.getElementById('ap_gateway').value = uint32ToIp(config.ap_gateway);
 
-        document.getElementById('ble_interval').value = config.ble_interval;
+        document.getElementById('ble_interval').value = Math.floor(config.ble_interval * 0.625);
         document.getElementById('ble_duration_ms').value = config.ble_duration_ms;
         document.getElementById('ambitful_universe').value = config.ambitful_universe;
-        document.getElementById('ambitful_addr').value = config.ambitful_addr;
+        document.getElementById('ambitful_addr').value = config.ambitful_addr + 1;
         document.getElementById('ambitful_channel').value = config.ambitful_channel;
         document.getElementById('ambitful_groups').value = config.ambitful_groups;
 
@@ -177,16 +177,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     form.addEventListener('submit', async function(event) {
         event.preventDefault();
 
-        const staIpCidr = parseIpCidr(document.getElementById('sta_ip_cidr').value);
+        // const staIpCidr = parseIpCidr(document.getElementById('sta_ip_cidr').value);
         const apIpCidr = parseIpCidr(document.getElementById('ap_ip_cidr').value);
 
         const newConfig = {
             sta_ssid: document.getElementById('sta_ssid').value,
             sta_password: document.getElementById('sta_password').value,
             sta_dhcp_enabled: document.getElementById('sta_dhcp_enabled').checked ? 1 : 0,
-            sta_ip: staIpCidr.ip,
-            sta_netmask_len: staIpCidr.cidr,
-            sta_gateway: ipToUint32(document.getElementById('sta_gateway').value),
+            // sta_ip: staIpCidr.ip,
+            // sta_netmask_len: staIpCidr.cidr,
+            // sta_gateway: ipToUint32(document.getElementById('sta_gateway').value),
 
             ap_ssid: document.getElementById('ap_ssid').value,
             ap_password: document.getElementById('ap_password').value,
@@ -194,10 +194,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             ap_netmask_len: apIpCidr.cidr,
             ap_gateway: ipToUint32(document.getElementById('ap_gateway').value),
 
-            ble_interval: parseInt(document.getElementById('ble_interval').value, 10),
+            ble_interval: Math.floor(parseInt(document.getElementById('ble_interval').value, 10) / 0.625),
             ble_duration_ms: parseInt(document.getElementById('ble_duration_ms').value, 10),
             ambitful_universe: parseInt(document.getElementById('ambitful_universe').value, 10),
-            ambitful_addr: parseInt(document.getElementById('ambitful_addr').value, 10),
+            ambitful_addr: parseInt(document.getElementById('ambitful_addr').value, 10) - 1,
             ambitful_channel: parseInt(document.getElementById('ambitful_channel').value, 10),
             ambitful_groups: parseInt(document.getElementById('ambitful_groups').value, 10),
         };

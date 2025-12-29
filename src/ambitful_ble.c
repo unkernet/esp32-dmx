@@ -12,7 +12,7 @@ static const char *TAG = "AMBUTFUL";
 #define MAX_AMBITFUL_GROUPS (8)
 #define AMBITFUL_SIZE (8)
 #define MAX_AMBITFUL_PRIORITY (4)
-#define IDLE_SLOW_DOWN (5)
+#define IDLE_SLOW_DOWN (8)
 
 static uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
 static uint8_t ambitful_data[MAX_AMBITFUL_GROUPS * AMBITFUL_SIZE];
@@ -20,7 +20,7 @@ static uint8_t ambitful_last_transmitted_group = 0;
 static uint8_t ambitful_idle_mode = 0;
 static SemaphoreHandle_t s_ble_data_mutex;
 
-static uint8_t counter = 0; // 0-222
+// static uint8_t counter = 0; // 0-222
 static uint8_t ibeacon_data[] = {
     // Header
     0x4C, 0x00, 0x02, 0x15, 
@@ -33,17 +33,15 @@ static uint8_t ibeacon_data[] = {
     // Footer
     0x00, 0x0A, 0x00, 0x6E, 0xC5 // mMajor, mMinor, mTxPower
 };
-static ble_addr_t ble_addr;
 static app_config_t *app_config;
 
 static void ble_app_advertise(void);
 static void set_fields();
 
 static void increment_counter() {
-    if (++counter == 223) {
-        counter = 0;
+    if (++ibeacon_data[18] == 223) {
+        ibeacon_data[18] = 0;
     }
-    // ble_hs_id_gen_rnd(0, &ble_addr);
 }
 
 static inline uint8_t clamp_100(uint8_t v) {
@@ -82,7 +80,7 @@ static void power_mode(uint8_t mode) {
     ibeacon_data[15] = 0x11;
     ibeacon_data[16] = 0x22;
     // ibeacon_data[17] = 0xBA;
-    ibeacon_data[18] = counter;
+    // ibeacon_data[18] = counter;
     ibeacon_data[19] = 0; // Power
 }
 
@@ -123,7 +121,7 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { //
     ibeacon_data[15] = 0; // mode
     ibeacon_data[16] = 2;
     // ibeacon_data[17] = 0xBA;
-    ibeacon_data[18] = counter;
+    // ibeacon_data[18] = counter;
     ibeacon_data[19] = power;
 }
 
@@ -157,7 +155,7 @@ static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mo
     ibeacon_data[15] = 1; // mode
     ibeacon_data[16] = 2;
     // ibeacon_data[17] = 0xBA;
-    ibeacon_data[18] = counter;
+    // ibeacon_data[18] = counter;
     ibeacon_data[19] = power;
 }
 
@@ -191,7 +189,7 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     ibeacon_data[15] = 2; // mode
     ibeacon_data[16] = 2;
     // ibeacon_data[17] = 0xBA;
-    ibeacon_data[18] = counter;
+    // ibeacon_data[18] = counter;
     ibeacon_data[19] = power;
 }
 
@@ -228,14 +226,13 @@ static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t
     ibeacon_data[15] = 5; // mode
     ibeacon_data[16] = 2;
     // ibeacon_data[17] = 0xBA;
-    ibeacon_data[18] = counter;
+    // ibeacon_data[18] = counter;
     ibeacon_data[19] = power;
 }
 
 static void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "BLE host synchronized.");
-    ble_hs_id_gen_rnd(0, &ble_addr);
     set_fields();
     ble_app_advertise();
 }
@@ -251,21 +248,13 @@ static void set_fields() {
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "error ble_gap_adv_set_fields; rc=%d", rc);
-    } else {
-        // ESP_LOGI(TAG, "ble_gap_adv_set_fields successfully");
-    }
-    // ble_addr.val[0]++;
-    rc = ble_hs_id_set_rnd(ble_addr.val);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "error ble_hs_id_set_rnd; rc=%d", rc);
-    } else {
-        // ESP_LOGI(TAG, "ble_hs_id_set_rnd successfully %02x %02x %02x %02x %02x %02x", ble_addr.val[0]
-        // , ble_addr.val[1], ble_addr.val[2], ble_addr.val[3], ble_addr.val[4], ble_addr.val[5]);
     }
 }
 
-static void adv_next_group() {
-    xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
+static void adv_next_group(bool lock) {
+    if (lock) {
+        xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
+    }
 
     uint8_t max_priority = 0;
     uint8_t ambitful_groups = app_config->ambitful_groups;
@@ -277,7 +266,6 @@ static void adv_next_group() {
             max_priority = groups_priority[group];
         }
     }
-    // ESP_LOGI(TAG, "adv_next_group max_priority %d %d", max_priority, ambitful_last_transmitted_group);
     // Second pass, we look for the group with max_priority, placed after ambitful_last_transmitted_group
     // We need this to prevent stuck in transmitting only the first group if all groups have minimum priority (0)
     for (group = ambitful_last_transmitted_group + 1; group != ambitful_last_transmitted_group; group++) {
@@ -288,7 +276,6 @@ static void adv_next_group() {
             break;
         }
     }
-    // ESP_LOGI(TAG, "adv_next_group group %d", group);
     if (groups_priority[group] > 0) {
         --groups_priority[group];
     } 
@@ -309,7 +296,9 @@ static void adv_next_group() {
         mode_fx(group, group_data[1], group_data[2], group_data[3]);
     }
 
-    xSemaphoreGive(s_ble_data_mutex);
+    if (lock) {
+        xSemaphoreGive(s_ble_data_mutex);
+    }
 
     set_fields();
     ble_app_advertise();
@@ -320,7 +309,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 {
     switch (event->type) {
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            adv_next_group();
+            adv_next_group(true);
             return 0;
 
         default:
@@ -341,7 +330,7 @@ static void ble_app_advertise(void)
 
     int rc;
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, app_config->ble_duration_ms * mult,
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, app_config->ble_duration_ms * mult,
                       &params, gap_event, NULL);
 
     if (rc != 0) {
@@ -354,7 +343,7 @@ static void ble_app_advertise(void)
 
 void ble_beacon_task(void *param)
 {
-    nimble_port_run(); // This function will return only when nimble_port_stop() is called
+    nimble_port_run();
     nimble_port_freertos_deinit();
 }
 
@@ -385,7 +374,6 @@ esp_err_t ambitful_ble_init(app_config_t *config)
 void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
     uint8_t ambitful_groups = app_config->ambitful_groups;
     uint16_t ambitful_addr = app_config->ambitful_addr;
-    // ESP_LOGI(TAG, "dmx_data %d %d %d", universe, length, data[0]);
     if (ambitful_groups > MAX_AMBITFUL_GROUPS) {
         ambitful_groups = MAX_AMBITFUL_GROUPS;
     }
@@ -399,7 +387,6 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
     if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {
         return;
     }
-    // ESP_LOGI(TAG, "dmx_data...");
     data += ambitful_addr;
     uint8_t changed = 0;
     for (uint8_t i = 0; i < ambitful_groups; i++) {
@@ -411,11 +398,10 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
     }
     if (changed) {
         increment_counter();
-        ESP_LOGI(TAG, "dmx_data counter %d", counter);
         if (ambitful_idle_mode) {
             ambitful_idle_mode = 0;
-            // adv_next_group();
-            // todo: stop adv
+            ble_gap_adv_stop();
+            adv_next_group(false);
         }
     }
     xSemaphoreGive(s_ble_data_mutex);

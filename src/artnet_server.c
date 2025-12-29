@@ -92,10 +92,9 @@ typedef struct __attribute__((packed)) {
 typedef struct {
     uint8_t buffer[UDP_BUFFER_SIZE];
     int len;
-    struct sockaddr_in source_addr;
+    struct sockaddr_in addr;
 } udp_packet_t;
 
-static QueueHandle_t udpQueue;
 
 // Global variables for DMX output
 static artdmx_packet_t s_artnet_packet_out = {
@@ -107,9 +106,11 @@ static artdmx_packet_t s_artnet_packet_out = {
     .physical = 0,
     .sub_universe = 0, // Assuming sub-universe 0
 };
-static uint16_t s_artnet_packet_length;
-struct sockaddr_in s_artnet_reply_to;
-static SemaphoreHandle_t s_dmx_data_mutex;
+
+static SemaphoreHandle_t tx_sem;
+static udp_packet_t rx_packet;
+static udp_packet_t tx_packet;
+
 static uint8_t sequence = 1;
 static TaskHandle_t srv_task = NULL, send_task = NULL;
 
@@ -120,21 +121,21 @@ static struct sockaddr_in broadcast_addr = {
     .sin_addr.s_addr = htonl(INADDR_BROADCAST) // Broadcast address
 };
 
-static struct sockaddr_in relpy_addr;
-
 static const char *TAG = "ARTNET_SERVER";
 
 static app_config_t *app_config;
 
-static void send_artpollreply(int sock, struct sockaddr_in *source_addr) {
-    if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)0) != pdTRUE) {
+static void send_artpollreply(struct sockaddr_in *source_addr) {
+    if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
         return;
     }
-    artpollreply_packet_t * reply = (artpollreply_packet_t *) &s_artnet_packet_out;
-    memset(((uint8_t *)reply) + ARTNET_ID_LENGTH, 0, sizeof(artpollreply_packet_t) - ARTNET_ID_LENGTH);
-    s_artnet_packet_length = sizeof(artpollreply_packet_t);
-    s_artnet_reply_to = *source_addr;
+    artpollreply_packet_t *reply = (artpollreply_packet_t *)tx_packet.buffer;
+    memset(reply, 0, sizeof(*reply));
+    
+    tx_packet.len = sizeof(*reply);
+    tx_packet.addr = *source_addr;
 
+    memcpy(reply->id, ARTNET_ID, ARTNET_ID_LENGTH);
     reply->opcode = ARTNET_OP_POLLREPLY;
     reply->port = ARTNET_PORT; // Port is 6454
     reply->vers_info = htons(1); // Version 1.0
@@ -176,7 +177,6 @@ static void send_artpollreply(int sock, struct sockaddr_in *source_addr) {
         if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
             mac_type = ESP_MAC_WIFI_SOFTAP;
         } else {
-            // ESP_LOGE(TAG, "Failed to get IP info for ArtPollReply from any interface");
             reply->ip_address = 0; // Zero out IP if not found
             // Still try to get SoftAP MAC if no IP found
             esp_read_mac(reply->mac, ESP_MAC_WIFI_SOFTAP);
@@ -193,7 +193,6 @@ send_reply_final:
     // Bind IP (same as main IP)
     reply->bind_ip = reply->ip_address;
 
-    xSemaphoreGive(s_dmx_data_mutex);
     xTaskNotifyGive(send_task);
 }
 
@@ -201,7 +200,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
     uint8_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
 
-    if (len < sizeof(artdmx_packet_t) - (512 - length)) {
+    if (length > 512 || len < sizeof(artdmx_packet_t) - (512 - length)) {
         ESP_LOGW(TAG, "Received malformed ArtDMX packet (len: %d)", len);
         // Received malformed ArtDMX packet
         return;
@@ -216,7 +215,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
 }
 
 static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr_in *source_addr) {
-    if (len < ARTNET_ID_LENGTH + sizeof(uint16_t)) { // Minimum size for ID + OpCode
+    if (len < sizeof(artnet_header_t)) {
         return;
     }
 
@@ -228,7 +227,7 @@ static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr
 
     switch (header->opcode) {
         case ARTNET_OP_POLL:
-            send_artpollreply(sock, source_addr);
+            send_artpollreply(source_addr);
             break;
         case ARTNET_OP_DMX:
             handle_artdmx((artdmx_packet_t *)rx_buffer, len);
@@ -239,47 +238,25 @@ static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr
     }
 }
 
-static void artnet_parser_task(void *pvParameters)
-{
-    static udp_packet_t buffer;
-    while (1) {
-        if (pdPASS == xQueueReceive(udpQueue, &buffer, portMAX_DELAY)) {
-            handle_artnet_packet(buffer.buffer, buffer.len, &buffer.source_addr);
-        }
-    }
-    vTaskDelete(NULL);
-}
-
 static void artnet_sender_task(void *pvParameters)
 {
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)(pdMS_TO_TICKS(1000))) == pdTRUE) { // Try to take mutex, don't block indefinitely
-            int tx_err = sendto(sock, &s_artnet_packet_out, s_artnet_packet_length, 0, (struct sockaddr *)&s_artnet_reply_to, sizeof(struct sockaddr_in));
-            if (tx_err < 0) {
-                ESP_LOGE(TAG, "Error sending Art-Net DMX broadcast: errno %d", errno);
-            }
-            xSemaphoreGive(s_dmx_data_mutex);
-        }
+        int tx_err = sendto(sock, tx_packet.buffer, tx_packet.len, 0, (struct sockaddr *)&tx_packet.addr, sizeof(struct sockaddr_in));
+        xSemaphoreGive(tx_sem);
     }
     vTaskDelete(NULL);
 }
 
 static void artnet_server_task(void *pvParameters)
 {
-    udp_packet_t buffer;
-
     while (1) {
-        socklen_t socklen = sizeof(buffer.source_addr);
-        buffer.len = recvfrom(sock, buffer.buffer, UDP_BUFFER_SIZE, 0, (struct sockaddr *)&buffer.source_addr, &socklen);
+        socklen_t socklen = sizeof(rx_packet.addr);
+        rx_packet.len = recvfrom(sock, rx_packet.buffer, UDP_BUFFER_SIZE, 0, (struct sockaddr *)&rx_packet.addr, &socklen);
 
-        if (buffer.len < 0) {
-            ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-            break;
-        } else {
-            xQueueSend(udpQueue, &buffer, 0);
+        if (rx_packet.len > 0) {
+            handle_artnet_packet(rx_packet.buffer, rx_packet.len, &rx_packet.addr);
         }
-
     }
     vTaskDelete(NULL);
 }
@@ -287,11 +264,12 @@ static void artnet_server_task(void *pvParameters)
 esp_err_t start_artnet_server(app_config_t *config) {
     app_config = config;
 
-    s_dmx_data_mutex = xSemaphoreCreateMutex();
-    if (s_dmx_data_mutex == NULL) {
+    tx_sem = xSemaphoreCreateBinary();
+    if (tx_sem == NULL) {
         ESP_LOGE(TAG, "Failed to create DMX data mutex");
         return ESP_FAIL;
     }
+    xSemaphoreGive(tx_sem);
 
     struct sockaddr_in dest_addr = {
         .sin_addr.s_addr = htonl(INADDR_ANY),
@@ -306,17 +284,16 @@ esp_err_t start_artnet_server(app_config_t *config) {
     // Enable broadcast
     int enable_broadcast = 1;
     setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &enable_broadcast, sizeof(enable_broadcast));
+    int reuse = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (err < 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
     }
     ESP_LOGI(TAG, "Socket bound, port %d", ARTNET_PORT);
 
-    udpQueue = xQueueCreate(2, sizeof(udp_packet_t));
-
     xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 7, &srv_task);
-    xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
-    xTaskCreate(artnet_parser_task, "artnet_parser", 2048, NULL, 5, NULL);
+    xTaskCreate(artnet_sender_task, "artnet_sender", 2048, NULL, 5, &send_task);
     return ESP_OK;
 }
 
@@ -324,24 +301,31 @@ void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t lengt
     if (length > 512) {
         return;
     }
-    if (!seq) {
+    if (xSemaphoreTake(tx_sem, (TickType_t)0) != pdTRUE) {
+        return;
+    }
+
+    if (seq == 0) {
         if (++sequence == 0) {
             sequence = 1;
         }
         seq = sequence;
     }
-    if (xSemaphoreTake(s_dmx_data_mutex, (TickType_t)0) == pdTRUE) {
-        s_artnet_packet_out.header.opcode = ARTNET_OP_DMX;
-        s_artnet_packet_out.header.prot_ver = htons(14);
-        s_artnet_packet_out.sequence = seq;
-        s_artnet_packet_out.physical = 0;
-        s_artnet_packet_out.universe = universe;
-        s_artnet_packet_out.sub_universe = 0;
-        s_artnet_packet_out.length = htons(length);
-        memcpy(s_artnet_packet_out.data, data, length);
-        s_artnet_packet_length = sizeof s_artnet_packet_out - (512 - length);
-        s_artnet_reply_to = broadcast_addr;
-        xSemaphoreGive(s_dmx_data_mutex);
-        xTaskNotifyGive(send_task);
-    }
+
+    artdmx_packet_t *reply = (artdmx_packet_t *)tx_packet.buffer;
+
+    memcpy(reply->header.id, ARTNET_ID, ARTNET_ID_LENGTH);
+    reply->header.opcode = ARTNET_OP_DMX;
+    reply->header.prot_ver = htons(14);
+    reply->sequence = seq;
+    reply->physical = 0;
+    reply->universe = universe;
+    reply->sub_universe = 0;
+    reply->length = htons(length);
+    memcpy(reply->data, data, length);
+
+    tx_packet.len = sizeof(artdmx_packet_t) - (512 - length);
+    tx_packet.addr = broadcast_addr;
+
+    xTaskNotifyGive(send_task);
 }
