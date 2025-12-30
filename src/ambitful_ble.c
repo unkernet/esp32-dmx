@@ -380,7 +380,7 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
     if (ambitful_addr + ambitful_groups * AMBITFUL_SIZE > 512) {
         ambitful_groups = 0; // Invalid configuration, disable
     }
-    if (app_config == NULL || app_config->ambitful_channel == 0 ||  ambitful_groups == 0 || app_config->ambitful_universe != universe
+    if (app_config == NULL || app_config->ambitful_channel == 0 || ambitful_groups == 0 || app_config->ambitful_universe != universe
         || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
         return;
     }

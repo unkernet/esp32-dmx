@@ -10,6 +10,7 @@
 #include "web_server.h"
 #include "artnet_server.h"
 #include "ambitful_ble.h"
+#include "dmx.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
 #include "mdns.h"
@@ -67,6 +68,7 @@ void app_main() {
 
     wifi_manager_init(&app_config);
     ambitful_ble_init(&app_config);
+    dmx_init(&app_config);
     start_webserver(&app_config);
     start_artnet_server(&app_config);
     start_mdns();

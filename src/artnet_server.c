@@ -6,7 +6,6 @@
 #include "lwip/netdb.h"
 #include "artnet_server.h"
 #include "esp_netif.h"
-#include "esp_mac.h"
 #include "web_server.h"
 #include "ambitful_ble.h"
 #include "dmx.h"
@@ -115,15 +114,14 @@ static uint8_t sequence = 1;
 static TaskHandle_t srv_task = NULL, send_task = NULL;
 
 static int sock;
-static struct sockaddr_in broadcast_addr = {
-    .sin_family = AF_INET,
-    .sin_port = htons(ARTNET_PORT),
-    .sin_addr.s_addr = htonl(INADDR_BROADCAST) // Broadcast address
-};
 
 static const char *TAG = "ARTNET_SERVER";
 
 static app_config_t *app_config;
+
+extern uint32_t g_ip_addr;
+extern uint32_t g_broadcast_addr;
+extern uint8_t g_mac_addr[6];
 
 static void send_artpollreply(struct sockaddr_in *source_addr) {
     if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
@@ -163,35 +161,9 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     strncpy(reply->long_name, ARTNET_NODE_LONG_NAME, sizeof(reply->long_name) - 1);
     strncpy(reply->node_report, ARTNET_NODE_REPORT, sizeof(reply->node_report) - 1);
 
-    esp_netif_ip_info_t ip_info;
-    esp_netif_t *netif = NULL;
-    esp_mac_type_t mac_type = ESP_MAC_WIFI_SOFTAP; // Default to SoftAP MAC
-
-    // Try STA interface first
-    netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
-        mac_type = ESP_MAC_WIFI_STA;
-    } else {
-        // Fallback to AP interface
-        netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-        if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
-            mac_type = ESP_MAC_WIFI_SOFTAP;
-        } else {
-            reply->ip_address = 0; // Zero out IP if not found
-            // Still try to get SoftAP MAC if no IP found
-            esp_read_mac(reply->mac, ESP_MAC_WIFI_SOFTAP);
-            goto send_reply_final; // Skip IP-dependent parts
-        }
-    }
-
-    reply->ip_address = (ip_info.ip.addr);
-    
-    // MAC address
-    esp_read_mac(reply->mac, mac_type);
-
-send_reply_final:
-    // Bind IP (same as main IP)
-    reply->bind_ip = reply->ip_address;
+    reply->ip_address = g_ip_addr;
+    reply->bind_ip = g_ip_addr;
+    memcpy(reply->mac, g_mac_addr, sizeof(reply->mac));
 
     xTaskNotifyGive(send_task);
 }
@@ -211,7 +183,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
     send_dmx_data(universe, dmx_packet->data, length);
     send_ws2812_data(universe, dmx_packet->data, length);
     // just for test, send back to ArtNet
-    send_artnet_dmx_data(universe, dmx_packet->data, length, dmx_packet->sequence);
+    // send_artnet_dmx_data(universe, dmx_packet->data, length, dmx_packet->sequence);
 }
 
 static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr_in *source_addr) {
@@ -325,7 +297,10 @@ void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t lengt
     memcpy(reply->data, data, length);
 
     tx_packet.len = sizeof(artdmx_packet_t) - (512 - length);
-    tx_packet.addr = broadcast_addr;
+    memset(&tx_packet.addr, 0, sizeof(tx_packet.addr));
+    tx_packet.addr.sin_family = AF_INET;
+    tx_packet.addr.sin_port = htons(ARTNET_PORT);
+    tx_packet.addr.sin_addr.s_addr = g_broadcast_addr;
 
     xTaskNotifyGive(send_task);
 }

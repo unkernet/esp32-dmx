@@ -5,6 +5,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "nvs_flash.h"
 #include "lwip/ip_addr.h"
 #include "lwip/sockets.h"
@@ -16,13 +17,23 @@
 static const char *TAG = "WIFI_MANAGER";
 
 static EventGroupHandle_t wifi_event_group;
-const int WIFI_CONNECTED_BIT = BIT0;
-const int WIFI_FAIL_BIT = BIT1;
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+uint32_t g_ip_addr = 0;
+uint32_t g_broadcast_addr = 0;
+uint8_t g_mac_addr[6];
 
 static int s_retry_num = 0;
 static app_config_t *app_config; // Pointer to the global configuration
 
-extern void blink_led(int times);
+static void calc_ip_and_broadcast(esp_netif_ip_info_t *ip_info)
+{
+    uint32_t netmask = ip_info->netmask.addr;
+    g_ip_addr = ip_info->ip.addr;
+    g_broadcast_addr = (g_ip_addr & netmask) | ~netmask;
+}
 
 // Helper function to convert CIDR prefix length to uint32_t netmask
 static uint32_t cidr_len_to_ip_netmask(uint8_t cidr_len) {
@@ -49,6 +60,8 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        calc_ip_and_broadcast(&event->ip_info);
+        esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
         s_retry_num = 0;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
@@ -61,7 +74,7 @@ static void wifi_init_sta(app_config_t *config) // Made static
 
     if (!config->sta_dhcp_enabled) {
         ESP_LOGI(TAG, "Configuring static IP for STA mode.");
-        esp_netif_dhcpc_stop(sta_netif); // Corrected: use dhcpc_stop for STA client
+        esp_netif_dhcpc_stop(sta_netif);
         esp_netif_ip_info_t ip_info;
         ip_info.ip.addr = config->sta_ip;
         ip_info.netmask.addr = cidr_len_to_ip_netmask(config->sta_netmask_len);
@@ -143,6 +156,11 @@ static void wifi_init_ap(app_config_t *config) // Made static
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+
+    esp_netif_ip_info_t ip_info;
+    esp_netif_get_ip_info(ap_netif, &ip_info);
+    calc_ip_and_broadcast(&ip_info);
+    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
 
     ESP_LOGI(TAG, "wifi_init_ap finished. SSID:%s password:%s",
              config->ap_ssid, config->ap_password);

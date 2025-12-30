@@ -25,10 +25,6 @@ void app_config_get_default(app_config_t *config) {
     config->ap_ssid[MAX_SSID_LEN] = '\0';
     strncpy(config->ap_password, "password", MAX_PASSWORD_LEN); // Default AP password
     config->ap_password[MAX_PASSWORD_LEN] = '\0';
-    // Default AP IP settings
-    config->ap_ip = esp_ip4addr_aton("192.168.4.1");
-    config->ap_netmask_len = 24;
-    config->ap_gateway = esp_ip4addr_aton("192.168.4.1"); // AP gateway is usually its own IP
 
     // Default BLE Beacon settings
     config->ble_interval = 20; // 20ms advertising interval

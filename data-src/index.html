@@ -48,6 +48,7 @@
     <form id="configForm">
         <div class="section">
             <h2>Station (Client) Mode Settings</h2>
+
             <label for="sta_ssid">SSID:</label>
             <input type="text" id="sta_ssid" name="sta_ssid" maxlength="32"><br>
 
@@ -57,40 +58,46 @@
             <label>
                 <input type="checkbox" id="sta_dhcp_enabled" name="sta_dhcp_enabled">
                 Enable DHCP
-            </label><!--br><br>
+            </label><br><br>
 
             <label for="sta_ip_cidr">Static IP / CIDR:</label>
             <input type="text" id="sta_ip_cidr" name="sta_ip_cidr" pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[1-2][0-9]|3[0-2])$"><br>
 
             <label for="sta_gateway">Gateway:</label>
-            <input type="text" id="sta_gateway" name="sta_gateway" pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"><br-->
+            <input type="text" id="sta_gateway" name="sta_gateway" pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"><br>
         </div>
 
         <div class="section">
             <h2>Access Point (AP) Mode Settings</h2>
+
             <label for="ap_ssid">SSID:</label>
             <input type="text" id="ap_ssid" name="ap_ssid" maxlength="32"><br>
 
             <label for="ap_password">Password:</label>
             <input type="password" id="ap_password" name="ap_password" maxlength="64"><br>
-
-            <label for="ap_ip_cidr">IP Address / CIDR:</label>
-            <input type="text" id="ap_ip_cidr" name="ap_ip_cidr" pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(?:[0-9]|[1-2][0-9]|3[0-2])$"><br>
-
-            <label for="ap_gateway">Gateway:</label>
-            <input type="text" id="ap_gateway" name="ap_gateway" pattern="^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"><br>
         </div>
 
         <div class="section">
+            <h2>DMX Settings</h2>
+
+            <label for="dmx_in_universe">Input universe, DMX -> ArtNet (0-255):</label>
+            <input type="number" id="dmx_in_universe" name="dmx_in_universe" min="0" max="255" value="0"><br>
+
+            <label for="dmx_out_universe">Output universe, ArtNet -> DMX (0-255):</label>
+            <input type="number" id="dmx_out_universe" name="dmx_out_universe" min="0" max="255" value="0"><br>
+        </div>
+        
+        <div class="section">
             <h2>Ambitful Settings</h2>
+
             <label for="ambitful_universe">Universe (0-255):</label>
             <input type="number" id="ambitful_universe" name="ambitful_universe" min="0" max="255" value="1"><br>
 
             <label for="ambitful_addr">Address (1-504):</label>
             <input type="number" id="ambitful_addr" name="ambitful_addr" min="1" max="504" value="1"><br>
 
-            <label for="ambitful_channel">Ambitful channel (1-19):</label>
-            <input type="number" id="ambitful_channel" name="ambitful_channel" min="1" max="19" value="1"><br>
+            <label for="ambitful_channel">Ambitful channel, 0 disabled (1-19):</label>
+            <input type="number" id="ambitful_channel" name="ambitful_channel" min="0" max="19" value="0"><br>
 
             <label for="ambitful_groups">Ambitful groups (1-8):</label>
             <input type="number" id="ambitful_groups" name="ambitful_groups" min="1" max="8" value="4"><br>
@@ -101,7 +108,14 @@
             <label for="ble_duration_ms">Advertising Duration (50-10000ms):</label>
             <input type="number" id="ble_duration_ms" name="ble_duration_ms" min="50" max="10000ms" value="200"><br>
         </div>
-        
+
+        <div class="section">
+            <h2>WS2812 Settings</h2>
+
+            <label for="ws2812_universe">WS2812 universe, ArtNet -> WS2812 (0-255):</label>
+            <input type="number" id="ws2812_universe" name="ws2812_universe" min="0" max="255" value="0"><br>
+        </div>
+
         <input type="submit" value="Save Configuration">
     </form>
 
