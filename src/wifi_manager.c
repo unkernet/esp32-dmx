@@ -1,6 +1,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -17,6 +18,7 @@
 static const char *TAG = "WIFI_MANAGER";
 
 static EventGroupHandle_t wifi_event_group;
+static TimerHandle_t ap_shutdown_timer = NULL;
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -27,6 +29,33 @@ uint8_t g_mac_addr[6];
 
 static int s_retry_num = 0;
 static app_config_t *app_config; // Pointer to the global configuration
+
+static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
+{
+    ESP_LOGI(TAG, "No client connected for 3 minutes. Disabling AP mode.");
+    esp_wifi_stop();
+}
+
+static void ap_mode_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
+
+        if (ap_shutdown_timer != NULL) {
+            ESP_LOGI(TAG, "Client connected. Disabling AP shutdown timer.");
+            xTimerStop(ap_shutdown_timer, 0);
+            xTimerDelete(ap_shutdown_timer, 0);
+            ap_shutdown_timer = NULL;
+        }
+    }
+    else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d",
+                 MAC2STR(event->mac), event->aid);
+    }
+}
 
 static void calc_ip_and_broadcast(esp_netif_ip_info_t *ip_info)
 {
@@ -136,6 +165,8 @@ static void wifi_init_ap(app_config_t *config) // Made static
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &ap_mode_event_handler, NULL, NULL));
+
     wifi_config_t wifi_config = {
         .ap = {
             .ssid_len = strlen(config->ap_ssid),
@@ -156,6 +187,17 @@ static void wifi_init_ap(app_config_t *config) // Made static
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+
+    ap_shutdown_timer = xTimerCreate("AP_SHUTDOWN", pdMS_TO_TICKS(3 * 60 * 1000), pdFALSE, (void *)0, ap_shutdown_timer_callback);
+    if (ap_shutdown_timer) {
+        if (xTimerStart(ap_shutdown_timer, 0) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to start AP shutdown timer");
+        } else {
+            ESP_LOGI(TAG, "AP shutdown timer started (3 minutes)");
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to create AP shutdown timer");
+    }
 
     esp_netif_ip_info_t ip_info;
     esp_netif_get_ip_info(ap_netif, &ip_info);
