@@ -13,12 +13,17 @@
 #define DMX_UART_NUM      UART_NUM_1
 #define DMX_TX_PIN        4
 #define DMX_RX_PIN        5
-#define DMX_RTS_PIN       UART_PIN_NO_CHANGE   // если нужен DE — управляется отдельно
-#define DMX_BUF_SIZE      513                  // start code + 512
-#define DMX_BREAK_BITS    22     // 22 * 4 мкс ≈ 88 мкс (250 кбит)
-#define DMX_RX_BUFFERS    2
+#define DMX_RTS_PIN       UART_PIN_NO_CHANGE
+#define DMX_BREAK_BITS    22 // 22 * 4 us ≈ 88 us
 #define MIN_DMX_LEN       30
-#define RX_FREE           (-1)
+
+/*
+ * On ESP32 UART (ESP-IDF), one extra zero byte is consistently observed
+ * at the end of each frame when using UART_BREAK detection.
+ * This byte is associated with the BREAK condition and is discarded
+ * during processing.
+ */
+#define DMX_BUF_SIZE      514 // start code + 512 + break
 
 static const char *TAG = "DMX";
 
@@ -31,20 +36,16 @@ typedef struct {
 
 static TaskHandle_t tx_task = NULL, consumer_task = NULL;
 static dmx_frame_t dmx_tx_buf;
-static dmx_frame_t dmx_rx_buf[DMX_RX_BUFFERS];
+static dmx_frame_t dmx_rx_buf;
 static SemaphoreHandle_t tx_sem;
+static SemaphoreHandle_t consumer_sem;
 static QueueHandle_t uart_evt_queue;
-static volatile int8_t rx_read_idx = RX_FREE;
 
 static void dmx_consumer_task(void *arg)
 {
     while (1) {
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-            int8_t idx = rx_read_idx;
-            if (idx == RX_FREE) {
-                continue;
-            }
-            dmx_frame_t * frame = &dmx_rx_buf[idx];
+            dmx_frame_t * frame = &dmx_rx_buf;
             if (frame->len > 1 && frame->data[0] == 0) {
                 size_t len = frame->len - 1;
                 const uint8_t *data = frame->data + 1;
@@ -56,17 +57,50 @@ static void dmx_consumer_task(void *arg)
                 send_ws2812_data(universe, data, len);
                 send_dmx_data(universe, data, len); // Allow passthrough?
             }
-            rx_read_idx = RX_FREE; // Mark consumer as free
+            xSemaphoreGive(consumer_sem);
         }
     }
 }
 
+/*
+ * IMPORTANT NOTE ABOUT UART BREAK HANDLING ON ESP32 (ESP-IDF)
+ *
+ * On ESP32 UART driver, UART_BREAK event does NOT mean that all data
+ * belonging to the previous DMX frame has already been delivered
+ * via UART_DATA events.
+ *
+ * Observed behavior:
+ *  - Incoming DMX data is delivered in chunks (~120 bytes).
+ *  - When a BREAK occurs on the line, UART_BREAK event is generated
+ *    with evt.size == 0.
+ *  - At the moment UART_BREAK is received, uart_get_buffered_data_len()
+ *    may report 0 bytes.
+ *  - The LAST chunk of data (typically ~34 bytes) that was physically
+ *    received BEFORE the BREAK is delivered *after* the UART_BREAK 
+ *    event as a UART_DATA event.
+ *  - Edge case:
+ *    If (DMX frame length + 2) is exactly divisible by ~120 bytes,
+ *    the final UART_DATA event is NOT generated at all.
+ *    In this case, after UART_BREAK, the next UART_DATA contains bytes
+ *    belonging to the *next* DMX frame.
+ *
+ * Because of this, UART_BREAK must be treated only as a synchronization
+ * marker, not as a point where all frame data is already available.
+ *
+ * For this reason:
+ *  - UART_DATA bytes are counted (to_read) but NOT read immediately.
+ *  - Actual reading from the UART internal buffer happens only after
+ *    UART_BREAK is received.
+ *  - This guarantees that the full DMX frame is read contiguously,
+ *    even though the last portion arrives after the BREAK event.
+ */
 static void dmx_rx_task(void *arg)
 {
     uart_event_t evt;
     uint8_t write_idx = 0;
-    size_t pos = 0;
-    bool in_frame = false;
+    bool is_sync = false;
+    bool was_break = false;
+    size_t to_read = 0;
 
     while (1) {
         if (!xQueueReceive(uart_evt_queue, &evt, portMAX_DELAY))
@@ -74,68 +108,52 @@ static void dmx_rx_task(void *arg)
 
         switch (evt.type) {
 
-        case UART_DATA:
-            if (!in_frame) {
-                static uint8_t dump[32];
-                size_t left = evt.size;
-                ESP_LOGI(TAG, "UART_DATA dump %d", left);
-
-                while (left > 0) {
-                    int n = uart_read_bytes(DMX_UART_NUM, dump, left > sizeof(dump) ? sizeof(dump) : left, 0);
-                    left -= n;
-                }
-                break;
-            }
-
-            size_t to_read = evt.size;
-            if (pos + to_read > DMX_BUF_SIZE)
-                to_read = DMX_BUF_SIZE - pos;
-
-            if (to_read) {
-                pos += uart_read_bytes(DMX_UART_NUM, dmx_rx_buf[write_idx].data + pos, to_read, 0);
-            }
-
-            if (pos >= DMX_BUF_SIZE) {
-                ESP_LOGI(TAG, "UART_DATA read full %d", to_read);
-                if (rx_read_idx == RX_FREE) {
-                    dmx_rx_buf[write_idx].len = pos;
-                    rx_read_idx = write_idx;
-                    write_idx ^= 1;
+        case UART_DATA: {
+            to_read += evt.size;
+            if (to_read > DMX_BUF_SIZE) {
+                was_break = false;
+                is_sync = false;
+                to_read = 0;
+                uart_flush_input(DMX_UART_NUM);
+                ESP_LOGI(TAG, "Too long packet");
+            } else if (was_break) {
+                // Read from buffer only after BREAK signal
+                was_break = false;
+                if (is_sync && xSemaphoreTake(consumer_sem, 0) == pdTRUE) {
+                    size_t len = 0;
+                    int n = 0;
+                    while (to_read && (n = uart_read_bytes(DMX_UART_NUM, dmx_rx_buf.data + len, to_read, 0))) {
+                        len += n;
+                        to_read -= n;
+                    }
+                    dmx_rx_buf.len = len - 1;
                     xTaskNotifyGive(consumer_task);
                 } else {
-                    ESP_LOGE(TAG, "rx buffer full");
+                    // Just remove bytes from internal buffer
+                    static uint8_t dump[32];
+                    while (to_read) {
+                        to_read -= uart_read_bytes(DMX_UART_NUM, dump, MIN(to_read, sizeof(dump)), 0);
+                    }
+                    is_sync = true;
                 }
-
-                in_frame = false;
-                pos = 0;
             } else {
-                ESP_LOGI(TAG, "UART_DATA read %d", to_read);
+                // Keep data in UART internal buffer until BREAK detected
             }
-
             break;
+        }
 
-        case UART_BREAK:
-            ESP_LOGI(TAG, "UART_BREAK %d", pos);
-            if (in_frame && pos > MIN_DMX_LEN) {
-                dmx_rx_buf[write_idx].len = pos;
-                if (rx_read_idx == RX_FREE) {
-                    rx_read_idx = write_idx;
-                    write_idx ^= 1;
-                    xTaskNotifyGive(consumer_task);
-                } else {
-                    ESP_LOGE(TAG, "rx buffer full");
-                }
-            }
-
-            pos = 0;
-            in_frame = true;
+        case UART_BREAK: {
+            // Next data frame will be last in this DMX packet
+            was_break = true;
             break;
+        }
 
         case UART_FIFO_OVF:
         case UART_BUFFER_FULL:
+            was_break = false;
+            is_sync = false;
+            to_read = 0;
             uart_flush_input(DMX_UART_NUM);
-            pos = 0;
-            in_frame = false;
             ESP_LOGE(TAG, "UART buffer overflow");
             break;
 
@@ -162,7 +180,7 @@ void send_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length)
     }
 
     if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
-        ESP_LOGE(TAG, "tx queue overflow");
+        // ESP_LOGE(TAG, "tx queue overflow");
         return;
     }
 
@@ -186,15 +204,17 @@ esp_err_t dmx_init(app_config_t *config)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    uart_driver_install(DMX_UART_NUM, 1024, 0, 4, &uart_evt_queue, 0);
+    uart_driver_install(DMX_UART_NUM, 600, 0, 4, &uart_evt_queue, 0);
     uart_param_config(DMX_UART_NUM, &cfg);
     uart_set_pin(DMX_UART_NUM, DMX_TX_PIN, DMX_RX_PIN, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
 
     tx_sem = xSemaphoreCreateBinary();
+    consumer_sem = xSemaphoreCreateBinary();
     xSemaphoreGive(tx_sem);
+    xSemaphoreGive(consumer_sem);
 
     xTaskCreate(dmx_rx_task, "dmx_rx", 2048, NULL, 7, NULL);
-    xTaskCreate(dmx_consumer_task, "dmx_consumer", 2048, NULL, 5, &consumer_task);
+    xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, NULL, 5, &consumer_task);
     xTaskCreate(dmx_tx_task, "dmx_tx", 2048, NULL, 5, &tx_task);
 
     return ESP_OK;

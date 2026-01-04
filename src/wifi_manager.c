@@ -126,7 +126,7 @@ static void wifi_init_sta(app_config_t *config) // Made static
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s", config->sta_ssid);
     } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+        ESP_LOGE(TAG, "UNEXPECTED EVENT %lu", bits);
     }
 }
 

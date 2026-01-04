@@ -233,8 +233,11 @@ static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t
 static void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "BLE host synchronized.");
-    set_fields();
-    ble_app_advertise();
+    if (app_config->ambitful_channel) {
+        mode_on();
+        set_fields();
+        ble_app_advertise();
+    }
 }
 
 static void set_fields() {
@@ -363,8 +366,6 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     nimble_port_init();
 
     ble_hs_cfg.sync_cb = ble_app_on_sync;
-
-    mode_on();
 
     nimble_port_freertos_init(ble_beacon_task);
 

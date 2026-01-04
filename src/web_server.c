@@ -305,7 +305,7 @@ void send_ws_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
         ws_pkt.len = length + 1;
         ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
-        ESP_LOGI(TAG, "Send ws, len: %d, clients: %d", ws_pkt.len, ws_clients_count);
+        // ESP_LOGI(TAG, "Send ws, len: %d, clients: %d", ws_pkt.len, ws_clients_count);
 
         for (int i = 0; i < ws_clients_count; i++) {
             httpd_ws_send_frame_async(ws_clients[i].handle, ws_clients[i].fd, &ws_pkt);
