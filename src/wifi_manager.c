@@ -22,6 +22,7 @@ static TimerHandle_t ap_shutdown_timer = NULL;
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+#define WIFI_CONNECT_TIMEOUT_MS 5000
 
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
@@ -34,27 +35,6 @@ static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI(TAG, "No client connected for 3 minutes. Disabling AP mode.");
     esp_wifi_stop();
-}
-
-static void ap_mode_event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
-{
-    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
-
-        if (ap_shutdown_timer != NULL) {
-            ESP_LOGI(TAG, "Client connected. Disabling AP shutdown timer.");
-            xTimerStop(ap_shutdown_timer, 0);
-            xTimerDelete(ap_shutdown_timer, 0);
-            ap_shutdown_timer = NULL;
-        }
-    }
-    else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d",
-                 MAC2STR(event->mac), event->aid);
-    }
 }
 
 static void calc_ip_and_broadcast(esp_netif_ip_info_t *ip_info)
@@ -72,7 +52,7 @@ static uint32_t cidr_len_to_ip_netmask(uint8_t cidr_len) {
     return (0xFFFFFFFF << (32 - cidr_len));
 }
 
-static void event_handler(void* arg, esp_event_base_t event_base,
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -83,7 +63,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             s_retry_num++;
             ESP_LOGI(TAG, "retry to connect to the AP");
         } else {
-            xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+            if (wifi_event_group) {
+                xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+            }
         }
         ESP_LOGI(TAG,"connect to the AP fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -92,13 +74,27 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         calc_ip_and_broadcast(&event->ip_info);
         esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
         s_retry_num = 0;
-        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        if (wifi_event_group) {
+            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        }
+    } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
+
+        if (ap_shutdown_timer != NULL) {
+            ESP_LOGI(TAG, "Client connected. Disabling AP shutdown timer.");
+            xTimerStop(ap_shutdown_timer, 0);
+            xTimerDelete(ap_shutdown_timer, 0);
+            ap_shutdown_timer = NULL;
+        }
+    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
+        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
     }
 }
 
-static void wifi_init_sta(app_config_t *config) // Made static
+static esp_err_t wifi_init_sta(app_config_t *config)
 {
-    wifi_event_group = xEventGroupCreate();
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
 
     if (!config->sta_dhcp_enabled) {
@@ -114,19 +110,6 @@ static void wifi_init_sta(app_config_t *config) // Made static
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
-
     wifi_config_t wifi_config = {
         .sta = {
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
@@ -137,35 +120,44 @@ static void wifi_init_sta(app_config_t *config) // Made static
     wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
     wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
 
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    s_retry_num = 0;
     ESP_ERROR_CHECK(esp_wifi_start() );
 
-    ESP_LOGI(TAG, "wifi_init_sta finished.");
+    ESP_LOGI(TAG, "wifi_init_sta started.");
 
+    wifi_event_group = xEventGroupCreate();
     EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
             WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
             pdFALSE,
             pdFALSE,
-            pdMS_TO_TICKS(5000));
+            pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
 
+    esp_err_t ret = ESP_FAIL;
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s", config->sta_ssid);
+        ret = ESP_OK;
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s", config->sta_ssid);
     } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT %lu", bits);
+        ESP_LOGE(TAG, "UNEXPECTED EVENT or timeout: %lu", bits);
     }
+
+    vEventGroupDelete(wifi_event_group);
+    wifi_event_group = NULL;
+
+    if (ret != ESP_OK) {
+        esp_wifi_stop();
+    }
+    return ret;
 }
 
-static void wifi_init_ap(app_config_t *config) // Made static
+static void wifi_init_ap(app_config_t *config)
 {
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &ap_mode_event_handler, NULL, NULL));
 
     wifi_config_t wifi_config = {
         .ap = {
@@ -213,18 +205,13 @@ void wifi_manager_init(app_config_t *config) {
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
 
     // Check if STA SSID is configured to decide between STA and AP mode
     if (strlen(config->sta_ssid) > 0 && strcmp(config->sta_ssid, "YOUR_STA_SSID") != 0) {
         ESP_LOGI(TAG, "STA SSID configured, attempting to connect in STA mode.");
-        wifi_init_sta(config);
-        EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
-                WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                pdFALSE,
-                pdFALSE,
-                portMAX_DELAY); // Wait indefinitely for connection result
-
-        if (bits & WIFI_CONNECTED_BIT) {
+        if (wifi_init_sta(config) == ESP_OK) {
             ESP_LOGI(TAG, "STA mode connected successfully.");
         } else {
             ESP_LOGW(TAG, "STA mode failed to connect, falling back to AP mode.");
