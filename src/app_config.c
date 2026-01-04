@@ -1,5 +1,7 @@
 #include "app_config.h"
 #include <string.h>
+#include <stdio.h> // For sprintf
+#include "esp_mac.h" // For esp_read_mac
 #include "esp_netif.h" // For esp_ip4addr_aton
 
 
@@ -21,7 +23,10 @@ void app_config_get_default(app_config_t *config) {
     config->sta_gateway = esp_ip4addr_aton("192.168.1.1");
 
     // Default AP settings
-    strncpy(config->ap_ssid, "ESP32_DMX_AP", MAX_SSID_LEN);
+    // Generate AP SSID dynamically based on MAC address
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP); // Use AP MAC for AP SSID
+    sprintf(config->ap_ssid, "ESP-DMX-%02X%02X", mac[4], mac[5]);
     config->ap_ssid[MAX_SSID_LEN] = '\0';
     strncpy(config->ap_password, "password", MAX_PASSWORD_LEN); // Default AP password
     config->ap_password[MAX_PASSWORD_LEN] = '\0';

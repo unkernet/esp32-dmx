@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
@@ -10,6 +11,7 @@
 #include "nvs_flash.h"
 #include "lwip/ip_addr.h"
 #include "lwip/sockets.h"
+#include "esp_netif.h"
 #include "esp_netif_ip_addr.h"
 #include "wifi_manager.h"
 #include "app_config.h"
@@ -22,7 +24,8 @@ static TimerHandle_t ap_shutdown_timer = NULL;
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-#define WIFI_CONNECT_TIMEOUT_MS 5000
+#define WIFI_CONNECT_TIMEOUT_MS (5 * 1000)
+#define WIFI_AP_TIMEOUT_MS (3 * 60 * 1000)
 
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
@@ -35,6 +38,14 @@ static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI(TAG, "No client connected for 3 minutes. Disabling AP mode.");
     esp_wifi_stop();
+}
+
+static void set_netif_hostname(esp_netif_t *netif)
+{
+    if (netif == NULL) return;
+    char hostname[16];
+    sprintf(hostname, "ESP-DMX-%02X%02X", g_mac_addr[4], g_mac_addr[5]);
+    esp_netif_set_hostname(netif, hostname);
 }
 
 static void calc_ip_and_broadcast(esp_netif_ip_info_t *ip_info)
@@ -72,33 +83,32 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         calc_ip_and_broadcast(&event->ip_info);
-        esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
         s_retry_num = 0;
         if (wifi_event_group) {
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         }
     } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
+        // ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
 
         if (ap_shutdown_timer != NULL) {
-            ESP_LOGI(TAG, "Client connected. Disabling AP shutdown timer.");
             xTimerStop(ap_shutdown_timer, 0);
             xTimerDelete(ap_shutdown_timer, 0);
             ap_shutdown_timer = NULL;
         }
     } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
+        // ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
     }
 }
 
 static esp_err_t wifi_init_sta(app_config_t *config)
 {
+    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    set_netif_hostname(sta_netif);
 
     if (!config->sta_dhcp_enabled) {
-        ESP_LOGI(TAG, "Configuring static IP for STA mode.");
         esp_netif_dhcpc_stop(sta_netif);
         esp_netif_ip_info_t ip_info;
         ip_info.ip.addr = config->sta_ip;
@@ -120,19 +130,14 @@ static esp_err_t wifi_init_sta(app_config_t *config)
     wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
     wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     s_retry_num = 0;
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    ESP_LOGI(TAG, "wifi_init_sta started.");
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     wifi_event_group = xEventGroupCreate();
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
+        pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
 
     esp_err_t ret = ESP_FAIL;
     if (bits & WIFI_CONNECTED_BIT) {
@@ -155,7 +160,10 @@ static esp_err_t wifi_init_sta(app_config_t *config)
 
 static void wifi_init_ap(app_config_t *config)
 {
+    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+    set_netif_hostname(ap_netif);
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
@@ -180,24 +188,14 @@ static void wifi_init_ap(app_config_t *config)
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
-    ap_shutdown_timer = xTimerCreate("AP_SHUTDOWN", pdMS_TO_TICKS(3 * 60 * 1000), pdFALSE, (void *)0, ap_shutdown_timer_callback);
+    ap_shutdown_timer = xTimerCreate("AP_SHUTDOWN", pdMS_TO_TICKS(WIFI_AP_TIMEOUT_MS), pdFALSE, (void *)0, ap_shutdown_timer_callback);
     if (ap_shutdown_timer) {
-        if (xTimerStart(ap_shutdown_timer, 0) != pdPASS) {
-            ESP_LOGE(TAG, "Failed to start AP shutdown timer");
-        } else {
-            ESP_LOGI(TAG, "AP shutdown timer started (3 minutes)");
-        }
-    } else {
-        ESP_LOGE(TAG, "Failed to create AP shutdown timer");
+        xTimerStart(ap_shutdown_timer, 0);
     }
 
     esp_netif_ip_info_t ip_info;
     esp_netif_get_ip_info(ap_netif, &ip_info);
     calc_ip_and_broadcast(&ip_info);
-    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
-
-    ESP_LOGI(TAG, "wifi_init_ap finished. SSID:%s password:%s",
-             config->ap_ssid, config->ap_password);
 }
 
 void wifi_manager_init(app_config_t *config) {
