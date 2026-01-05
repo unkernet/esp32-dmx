@@ -1,7 +1,8 @@
 #include <string.h>
-#include <sys/stat.h> // For stat()
+#include <sys/stat.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
@@ -23,8 +24,9 @@ typedef struct {
 
 static const char *TAG = "WEB_SERVER";
 
-ws_client_info_t ws_clients[MAX_WS_CLIENTS];
-int ws_clients_count = 0;
+static ws_client_info_t ws_clients[MAX_WS_CLIENTS];
+static int ws_clients_count = 0;
+static SemaphoreHandle_t ws_mutex = NULL;
 
 extern void esp_restart(void);
 extern app_config_t app_config; // Declare global app_config from main.c
@@ -162,6 +164,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
 
 static void remove_ws_client(int fd)
 {
+    xSemaphoreTake(ws_mutex, portMAX_DELAY);
     int i;
     for (i = 0; i < ws_clients_count; i++) {
         if (ws_clients[i].fd == fd) {
@@ -173,17 +176,20 @@ static void remove_ws_client(int fd)
             break;
         }
     }
+    xSemaphoreGive(ws_mutex);
 }
 
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
         ESP_LOGI(TAG, "Handshake done, the new connection was opened");
+        xSemaphoreTake(ws_mutex, portMAX_DELAY);
         if (ws_clients_count < MAX_WS_CLIENTS) {
             ws_clients[ws_clients_count].fd = httpd_req_to_sockfd(req);
             ws_clients[ws_clients_count].handle = req->handle;
             ws_clients_count++;
         }
+        xSemaphoreGive(ws_mutex);
         return ESP_OK;
     }
 
@@ -211,10 +217,10 @@ static esp_err_t ws_handler(httpd_req_t *req)
         }
 
         if (ws_pkt.type == HTTPD_WS_TYPE_BINARY) {
-            if (ws_pkt.len > 1) { // At least 1 byte for universe + 1 byte for data
-                uint8_t universe = ws_pkt.payload[0];
-                const uint8_t *data = (const uint8_t *)(ws_pkt.payload + 1);
-                uint16_t len = ws_pkt.len - 1;
+            if (ws_pkt.len > 2) { // At least 2 bytes for universe + 1 byte for data
+                uint16_t universe = ws_pkt.payload[0] + (ws_pkt.payload[1] << 8);
+                const uint8_t *data = (const uint8_t *)(ws_pkt.payload + 2);
+                uint16_t len = ws_pkt.len - 2;
                 send_artnet_dmx_data(universe, data, len, 0);
                 send_ambitful_dmx_data(universe, data, len);
                 send_dmx_data(universe, data, len);
@@ -278,6 +284,7 @@ void httpd_close_cb(httpd_handle_t hd, int sockfd)
 httpd_handle_t start_webserver(app_config_t *config)
 {
     global_web_config = config; // Store the config pointer
+    ws_mutex = xSemaphoreCreateMutex();
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
@@ -294,15 +301,24 @@ httpd_handle_t start_webserver(app_config_t *config)
     return server;
 }
 
-void send_ws_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
-    if (ws_clients_count > 0 && length <= 512) {
-        uint8_t buf[513];
-        buf[0] = universe;
-        memcpy(buf + 1, data, length);
+void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
+    if (length > 512) {
+        return;
+    }
+
+    if (xSemaphoreTake(ws_mutex, 0) != pdTRUE) {
+        return; // Failed to get lock
+    }
+
+    if (ws_clients_count > 0) {
+        uint8_t buf[514];
+        buf[0] = universe & 0xff;
+        buf[1] = universe >> 8;
+        memcpy(buf + 2, data, length);
 
         httpd_ws_frame_t ws_pkt;
         ws_pkt.payload = buf;
-        ws_pkt.len = length + 1;
+        ws_pkt.len = length + 2;
         ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
         // ESP_LOGI(TAG, "Send ws, len: %d, clients: %d", ws_pkt.len, ws_clients_count);
@@ -311,4 +327,5 @@ void send_ws_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
             httpd_ws_send_frame_async(ws_clients[i].handle, ws_clients[i].fd, &ws_pkt);
         }
     }
+    xSemaphoreGive(ws_mutex);
 }

@@ -6,14 +6,14 @@ import nodePolyfills from 'rollup-plugin-polyfill-node';
 export default {
   input: 'index.js',
   output: {
-    file: '../data/index.js', // Output uncompressed file
-    format: 'iife', // Immediately Invoked Function Expression
+    file: '../data/index.js',
+    format: 'iife',
     name: 'app',
   },
   plugins: [
-    resolve(), // so Rollup can find `ms`
-    commonjs(), // so Rollup can convert `ms` to an ES module
+    resolve(),
+    commonjs(),
     nodePolyfills(),
-    terser(),   // minify the output
+    terser(),
   ],
 };

@@ -31,15 +31,16 @@ void app_config_get_default(app_config_t *config) {
     strncpy(config->ap_password, "password", MAX_PASSWORD_LEN); // Default AP password
     config->ap_password[MAX_PASSWORD_LEN] = '\0';
 
-    // Default BLE Beacon settings
-    config->ble_interval = 20; // 20ms advertising interval
-    config->ble_duration_ms = 200; // 25s duration
+    config->enabled_modules = MOD_EN_DMX_IN | MOD_EN_DMX_OUT | MOD_EN_AMBITFUL | MOD_EN_WS2812;
 
-    config->dmx_in_universe = 0;
     config->dmx_out_universe = 0;
+    config->dmx_in_universe = 1;
 
-    config->ambitful_universe = 1;
-    config->ambitful_addr = 1;
+    config->ambitful_universe = 10;
+    config->ambitful_addr = 0;
     config->ambitful_channel = 1;
     config->ambitful_groups = 4;
+
+    config->ws2812_universe = 20;
 }
+

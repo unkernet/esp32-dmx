@@ -22,6 +22,7 @@ static const char *TAG = "WIFI_MANAGER";
 static EventGroupHandle_t wifi_event_group;
 static TimerHandle_t ap_shutdown_timer = NULL;
 
+#define WIFI_CONNECT_ATTEMPTS 8
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 #define WIFI_CONNECT_TIMEOUT_MS (5 * 1000)
@@ -69,9 +70,11 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < 5) {
+        if (s_retry_num < WIFI_CONNECT_ATTEMPTS) {
             esp_wifi_connect();
-            s_retry_num++;
+            if (s_retry_num >= 0) {
+                s_retry_num++;
+            }
             ESP_LOGI(TAG, "retry to connect to the AP");
         } else {
             if (wifi_event_group) {
@@ -83,7 +86,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         calc_ip_and_broadcast(&event->ip_info);
-        s_retry_num = 0;
+        s_retry_num = -1; // After successful connection make attempts infinite 
         if (wifi_event_group) {
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         }

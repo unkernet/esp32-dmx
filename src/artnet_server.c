@@ -19,8 +19,8 @@
 #define ARTNET_ID_LENGTH 8
 
 // Configuration for this Art-Net Node
-#define ARTNET_NODE_SHORT_NAME "ESP32 DMX"
-#define ARTNET_NODE_LONG_NAME "ESP32 DMX Art-Net Node"
+#define ARTNET_NODE_SHORT_NAME "ESP-DMX-%02X%02X"
+#define ARTNET_NODE_LONG_NAME "ESP-DMX-%02X%02X Art-Net Node"
 #define ARTNET_NODE_REPORT "#0001 0000 OK"
 
 // Art-Net Opcodes
@@ -82,8 +82,7 @@ typedef struct __attribute__((packed)) {
     artnet_header_t header;
     uint8_t sequence;
     uint8_t physical;
-    uint8_t universe;
-    uint8_t sub_universe;
+    uint16_t universe;
     uint16_t length; // BE
     uint8_t data[512];
 } artdmx_packet_t;
@@ -103,7 +102,6 @@ static artdmx_packet_t s_artnet_packet_out = {
         .prot_ver = htons(14), // Art-Net Protocol Version 14
     },
     .physical = 0,
-    .sub_universe = 0, // Assuming sub-universe 0
 };
 
 static SemaphoreHandle_t tx_sem;
@@ -157,8 +155,8 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     reply->status2 = 0x01; // Supports web browser configuration
     reply->refresh_rate = htons(44);
 
-    strncpy(reply->short_name, ARTNET_NODE_SHORT_NAME, sizeof(reply->short_name) - 1);
-    strncpy(reply->long_name, ARTNET_NODE_LONG_NAME, sizeof(reply->long_name) - 1);
+    snprintf(reply->short_name, sizeof(reply->short_name) - 1, ARTNET_NODE_SHORT_NAME, g_mac_addr[4], g_mac_addr[5]);
+    snprintf(reply->long_name, sizeof(reply->long_name) - 1, ARTNET_NODE_LONG_NAME, g_mac_addr[4], g_mac_addr[5]);
     strncpy(reply->node_report, ARTNET_NODE_REPORT, sizeof(reply->node_report) - 1);
 
     reply->ip_address = g_ip_addr;
@@ -169,7 +167,7 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
 }
 
 static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
-    uint8_t universe = dmx_packet->universe;
+    uint16_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
 
     if (length > 512 || len < sizeof(artdmx_packet_t) - (512 - length)) {
@@ -269,8 +267,8 @@ esp_err_t start_artnet_server(app_config_t *config) {
     return ESP_OK;
 }
 
-void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length, uint8_t seq) {
-    if (length > 512) {
+void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length, uint8_t seq) {
+    if ((app_config->enabled_modules & MOD_EN_ARTNET_OUT) == 0 || length > 512) {
         return;
     }
     if (xSemaphoreTake(tx_sem, (TickType_t)0) != pdTRUE) {
@@ -292,7 +290,6 @@ void send_artnet_dmx_data(uint8_t universe, const uint8_t * data, uint16_t lengt
     reply->sequence = seq;
     reply->physical = 0;
     reply->universe = universe;
-    reply->sub_universe = 0;
     reply->length = htons(length);
     memcpy(reply->data, data, length);
 

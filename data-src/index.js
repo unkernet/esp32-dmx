@@ -119,20 +119,28 @@ const struct = [
 
   ['ap_ssid', 's33'],
   ['ap_password', 's65'],
-  ['reserved_1', 's9'],
 
-  ['ble_interval', 'u16'],
-  ['ble_duration_ms', 'u32'],
-  ['ambitful_universe', 'u8'],
+  ['enabled_modules', 'u8'],
+
+  ['ambitful_universe', 'u16'],
   ['ambitful_addr', 'u16'],
   ['ambitful_channel', 'u8'],
   ['ambitful_groups', 'u8'],
 
-  ['dmx_in_universe', 'u8'],
-  ['dmx_out_universe', 'u8'],
+  ['dmx_in_universe', 'u16'],
+  ['dmx_out_universe', 'u16'],
 
-  ['ws2812_universe', 'u8']
+  ['ws2812_universe', 'u16'],
+
+  ['reserved_1', 's10'],
 ];
+
+const MOD_EN_DMX_IN     = (1<<0);
+const MOD_EN_DMX_OUT    = (1<<1);
+const MOD_EN_ARTNET_OUT = (1<<2);
+const MOD_EN_AMBITFUL   = (1<<3);
+const MOD_EN_WS2812     = (1<<4);
+const MOD_EN_ESPNOW     = (1<<5);
 
 const $ = document.getElementById.bind(document);
 
@@ -160,16 +168,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         $('ap_ssid').value = config.ap_ssid;
         $('ap_password').value = config.ap_password;
 
-        $('ble_interval').value = Math.floor(config.ble_interval * 0.625);
-        $('ble_duration_ms').value = config.ble_duration_ms;
+        $('en_artnet_out').checked = (config.enabled_modules & MOD_EN_ARTNET_OUT) > 0;
+
+        $('en_ambitful').checked = (config.enabled_modules & MOD_EN_AMBITFUL) > 0;
         $('ambitful_universe').value = config.ambitful_universe;
         $('ambitful_addr').value = config.ambitful_addr + 1;
         $('ambitful_channel').value = config.ambitful_channel;
         $('ambitful_groups').value = config.ambitful_groups;
 
+        $('en_dmx_in').checked = (config.enabled_modules & MOD_EN_DMX_IN) > 0;
+        $('en_dmx_out').checked = (config.enabled_modules & MOD_EN_DMX_OUT) > 0;
         $('dmx_in_universe').value = config.dmx_in_universe;
         $('dmx_out_universe').value = config.dmx_out_universe;
 
+        $('en_ws2812').checked = (config.enabled_modules & MOD_EN_WS2812) > 0;
         $('ws2812_universe').value = config.ws2812_universe;
 
     } catch (error) {
@@ -193,8 +205,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             ap_ssid: $('ap_ssid').value,
             ap_password: $('ap_password').value,
 
-            ble_interval: Math.floor(parseInt($('ble_interval').value, 10) / 0.625),
-            ble_duration_ms: parseInt($('ble_duration_ms').value, 10),
+            enabled_modules: ($('en_artnet_out').checked ? MOD_EN_ARTNET_OUT : 0) | 
+              ($('en_ambitful').checked ? MOD_EN_AMBITFUL : 0) | 
+              ($('en_dmx_in').checked ? MOD_EN_DMX_IN : 0) | 
+              ($('en_dmx_out').checked ? MOD_EN_DMX_OUT : 0) | 
+              ($('en_ws2812').checked ? MOD_EN_WS2812 : 0),
+
             ambitful_universe: parseInt($('ambitful_universe').value, 10),
             ambitful_addr: parseInt($('ambitful_addr').value, 10) - 1,
             ambitful_channel: parseInt($('ambitful_channel').value, 10),
@@ -215,6 +231,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     'Content-Type': 'application/octet-stream',
                 },
                 body: buffer,
+                signal: AbortSignal.timeout(3000),
             });
 
             if (response.ok) {

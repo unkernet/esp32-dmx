@@ -14,6 +14,9 @@ static const char *TAG = "AMBUTFUL";
 #define MAX_AMBITFUL_PRIORITY (4)
 #define IDLE_SLOW_DOWN (8)
 
+#define BLE_INTERVAL_MS (25 / 0.625)
+#define BLE_DURATION_MS 80
+
 static uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
 static uint8_t ambitful_data[MAX_AMBITFUL_GROUPS * AMBITFUL_SIZE];
 static uint8_t ambitful_last_transmitted_group = 0;
@@ -55,13 +58,6 @@ static inline uint8_t clamp_100(uint8_t v) {
 // Modes
 
 static void power_mode(uint8_t mode) {
-    // String.format("%02X%02X%02X00-64FF-FFFF-0000-001122%02X%02X",
-    // (byte) -85, Integer.valueOf(this.ch * 10), 4, // 0
-    // 64FF
-    // FFFF
-    // 0000
-    // 00 11 22, (byte) -70, Integer.valueOf(this.id));
-
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10;
     ibeacon_data[6] = mode;
@@ -92,13 +88,6 @@ static void mode_on() {
 }
 
 static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { // mode 0
-    // tring.format("%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%04X%02X%02X%02X",
-    // (byte) -85, Integer.valueOf(i3), Integer.valueOf(getMode()), Integer.valueOf(getCCT()),
-    // Integer.valueOf(power), Integer.valueOf(getCCTType()),
-    // 0, Integer.valueOf(getRG()),
-    // 0, 0,
-    // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
-
     power = clamp_100(power); // 0 - 100
     cct = ((cct * 61) >> 8) + 25; // 25 - 85
     rg = (rg * 21) >> 8; // 0-20
@@ -126,13 +115,6 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { //
 }
 
 static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mode 1
-    // String.format("%02X%02X%02X%02X-%02X%02X-%02X%02X-%04X-%02X%02X%02X%02X%02X",
-    // (byte) -85, Integer.valueOf(i3), Integer.valueOf(getMode()), 0,
-    // Integer.valueOf(power), 0,
-    // 0, 0,
-    // Integer.valueOf(getHue()),
-    // Byte.valueOf((byte) getSta()), Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
-
     power = clamp_100(power); // 0 - 100
     s = clamp_100(s); // 0-100
     uint16_t hue = ((uint32_t)h * 361) >> 8; // 0 - 359
@@ -193,20 +175,18 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     ibeacon_data[19] = power;
 }
 
-static void mode_rgb(uint8_t group, uint8_t power, uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint8_t y) { // mode 5
-    // str = String.format("%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%04X%02X%02X%02X",
-    // (byte) -85, Integer.valueOf(i3), Integer.valueOf(getMode()), 0,
-    // Integer.valueOf(power), Integer.valueOf(getR()),
-    // Integer.valueOf(getG()), Integer.valueOf(getB()),
-    // Integer.valueOf(getW()), Integer.valueOf(getY()),
-    // Integer.valueOf(getMode()), 2, (byte) -70, Integer.valueOf(this.id));
-
-    power = clamp_100(power); // 0 - 100
+static void mode_rgb(uint8_t group, uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint8_t y) { // mode 5
     r = clamp_100(r); // 0-100
     g = clamp_100(g); // 0-100
     b = clamp_100(b); // 0-100
     w = clamp_100(w); // 0-100
     y = clamp_100(y); // 0-100
+
+    uint8_t power = r;
+    if (power < g) power = g;
+    if (power < b) power = b;
+    if (power < w) power = w;
+    if (power < y) power = y;
 
     // ibeacon_data[4] = 0xAB;
     ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
@@ -269,15 +249,14 @@ static void adv_next_group(bool lock) {
             max_priority = groups_priority[group];
         }
     }
-    // Second pass, we look for the group with max_priority, placed after ambitful_last_transmitted_group
-    // We need this to prevent stuck in transmitting only the first group if all groups have minimum priority (0)
-    for (group = ambitful_last_transmitted_group + 1; group != ambitful_last_transmitted_group; group++) {
-        if (group >= ambitful_groups) {
-            group = 0;
+    // Second pass, we look for the group with max_priority, starting after the last transmitted one
+    // to ensure round-robin behavior when priorities are equal.
+    group = (ambitful_last_transmitted_group + 1) % ambitful_groups;
+    for (int i = 0; i < ambitful_groups; i++) {
+        if (groups_priority[group] == max_priority) {
+            break; // Found a candidate
         }
-        if (max_priority == groups_priority[group]) {
-            break;
-        }
+        group = (group + 1) % ambitful_groups; // Move to next group, wrapping around
     }
     if (groups_priority[group] > 0) {
         --groups_priority[group];
@@ -290,7 +269,7 @@ static void adv_next_group(bool lock) {
 
     uint8_t mode = group_data[0];
     if (mode < 64) {
-        mode_rgb(group, group_data[1], group_data[2], group_data[3], group_data[4], group_data[5], group_data[6]);
+        mode_rgb(group, group_data[1], group_data[2], group_data[3], group_data[4], group_data[5]);
     } else if (mode < 64 * 2) {
         mode_hsl(group, group_data[1], group_data[2], group_data[3]);
     } else if (mode < 64 * 3) {
@@ -327,21 +306,11 @@ static void ble_app_advertise(void)
     struct ble_gap_adv_params params = {
         .conn_mode = BLE_GAP_CONN_MODE_NON,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
-        .itvl_min = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * mult),
-        .itvl_max = BLE_GAP_ADV_ITVL_MS(app_config->ble_interval * mult),
+        .itvl_min = BLE_GAP_ADV_ITVL_MS(BLE_INTERVAL_MS * mult),
+        .itvl_max = BLE_GAP_ADV_ITVL_MS(BLE_INTERVAL_MS * mult),
     };
 
-    int rc;
-
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, app_config->ble_duration_ms * mult,
-                      &params, gap_event, NULL);
-
-    if (rc != 0) {
-        ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
-        return;
-    }
-    // ESP_LOGI(TAG, "Advertising started successfully with interval %dms and duration %dms.",
-    //          app_config->ble_interval * mult, app_config->ble_duration_ms * mult);
+    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_DURATION_MS * mult, &params, gap_event, NULL);
 }
 
 void ble_beacon_task(void *param)
@@ -352,11 +321,14 @@ void ble_beacon_task(void *param)
 
 esp_err_t ambitful_ble_init(app_config_t *config)
 {
-    if (!config->ambitful_groups) {
+    if ((config->enabled_modules & MOD_EN_AMBITFUL) == 0 || !config->ambitful_groups) {
         return ESP_OK;
     }
     if (config->ambitful_groups > MAX_AMBITFUL_GROUPS) {
         config->ambitful_groups = MAX_AMBITFUL_GROUPS;
+    }
+    if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= 512) {
+        return ESP_OK; // Invalid configuration,
     }
     app_config = config; // Store config globally
     memset(groups_priority, 0, sizeof(groups_priority));
@@ -372,17 +344,10 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     return ESP_OK;
 }
 
-void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length) {
+void send_ambitful_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
     uint8_t ambitful_groups = app_config->ambitful_groups;
     uint16_t ambitful_addr = app_config->ambitful_addr;
-    if (ambitful_groups > MAX_AMBITFUL_GROUPS) {
-        ambitful_groups = MAX_AMBITFUL_GROUPS;
-    }
-    if (ambitful_addr + ambitful_groups * AMBITFUL_SIZE > 512) {
-        ambitful_groups = 0; // Invalid configuration, disable
-    }
-    if (app_config == NULL || app_config->ambitful_channel == 0 || ambitful_groups == 0 || app_config->ambitful_universe != universe
-        || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
+    if (app_config == NULL || app_config->ambitful_universe != universe || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
         return;
     }
     if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {
@@ -400,6 +365,7 @@ void send_ambitful_dmx_data(uint8_t universe, const uint8_t * data, uint16_t len
     if (changed) {
         increment_counter();
         if (ambitful_idle_mode) {
+            // TODO: Maybe run it in separate thread?
             ambitful_idle_mode = 0;
             ble_gap_adv_stop();
             adv_next_group(false);

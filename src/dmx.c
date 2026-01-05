@@ -4,18 +4,18 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "dmx.h"
+#include "hardware_config.h"
 #include <string.h>
 #include "artnet_server.h"
 #include "web_server.h"
 #include "ambitful_ble.h"
 #include "ws2812.h"
 
-#define DMX_UART_NUM      UART_NUM_1
-#define DMX_TX_PIN        4
-#define DMX_RX_PIN        5
+#define DMX_UART_NUM  UART_NUM_1
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
 #define DMX_BREAK_BITS    22 // 22 * 4 us ≈ 88 us
-#define MIN_DMX_LEN       30
+#define DMX_MAX_FRAME_INTERVAL_MS 900
+#define MIN_DMX_LEN       16
 
 /*
  * On ESP32 UART (ESP-IDF), one extra zero byte is consistently observed
@@ -40,13 +40,14 @@ static dmx_frame_t dmx_rx_buf;
 static SemaphoreHandle_t tx_sem;
 static SemaphoreHandle_t consumer_sem;
 static QueueHandle_t uart_evt_queue;
+static bool dmx_data_was_sent = false;
 
 static void dmx_consumer_task(void *arg)
 {
     while (1) {
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
             dmx_frame_t * frame = &dmx_rx_buf;
-            if (frame->len > 1 && frame->data[0] == 0) {
+            if (frame->len >= MIN_DMX_LEN + 1 && frame->data[0] == 0) {
                 size_t len = frame->len - 1;
                 const uint8_t *data = frame->data + 1;
                 uint8_t universe = app_config->dmx_in_universe;
@@ -97,7 +98,6 @@ static void dmx_consumer_task(void *arg)
 static void dmx_rx_task(void *arg)
 {
     uart_event_t evt;
-    uint8_t write_idx = 0;
     bool is_sync = false;
     bool was_break = false;
     size_t to_read = 0;
@@ -166,16 +166,31 @@ static void dmx_rx_task(void *arg)
 static void dmx_tx_task(void *arg)
 {
     while (1) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        uart_write_bytes_with_break(DMX_UART_NUM, (const char *)dmx_tx_buf.data, dmx_tx_buf.len, DMX_BREAK_BITS);
-        uart_wait_tx_done(DMX_UART_NUM, portMAX_DELAY);
-        xSemaphoreGive(tx_sem);
+        bool should_transmit_now = false;
+        BaseType_t notified = ulTaskNotifyTake(pdTRUE, dmx_data_was_sent ? pdMS_TO_TICKS(DMX_MAX_FRAME_INTERVAL_MS) : portMAX_DELAY);
+
+        if (notified > 0) {
+            // Notified: new data is ready in dmx_tx_buf and tx_sem is taken by sender.
+            should_transmit_now = true;
+        } else if (dmx_data_was_sent) {
+            // Timeout: no new data. Re-send last frame if we have one.
+            // To prevent data corruption, we should acquire the lock.
+            if (xSemaphoreTake(tx_sem, 0) == pdTRUE) {
+                should_transmit_now = true;
+            }
+        }
+
+        if (should_transmit_now) {
+            uart_write_bytes_with_break(DMX_UART_NUM, (const char *)dmx_tx_buf.data, dmx_tx_buf.len, DMX_BREAK_BITS);
+            uart_wait_tx_done(DMX_UART_NUM, portMAX_DELAY);
+            xSemaphoreGive(tx_sem);
+        }
     }
 }
 
-void send_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length)
+void send_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length)
 {
-    if (!app_config || universe != app_config->dmx_out_universe || length > DMX_BUF_SIZE - 1) {
+    if (!app_config || !tx_task || universe != app_config->dmx_out_universe || length > DMX_BUF_SIZE - 2) {
         return;
     }
 
@@ -187,12 +202,16 @@ void send_dmx_data(uint8_t universe, const uint8_t * data, uint16_t length)
     dmx_tx_buf.len = length + 1;
     dmx_tx_buf.data[0] = 0;
     memcpy(dmx_tx_buf.data + 1, data, length);
+    dmx_data_was_sent = true;
 
     xTaskNotifyGive(tx_task);
 }
 
 esp_err_t dmx_init(app_config_t *config)
 {
+    if (config->enabled_modules & (MOD_EN_DMX_IN | MOD_EN_DMX_OUT) == 0) {
+        return ESP_OK;
+    }
     app_config = config;
 
     uart_config_t cfg = {
@@ -213,9 +232,12 @@ esp_err_t dmx_init(app_config_t *config)
     xSemaphoreGive(tx_sem);
     xSemaphoreGive(consumer_sem);
 
-    xTaskCreate(dmx_rx_task, "dmx_rx", 2048, NULL, 7, NULL);
-    xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, NULL, 5, &consumer_task);
-    xTaskCreate(dmx_tx_task, "dmx_tx", 2048, NULL, 5, &tx_task);
-
+    if (app_config->enabled_modules & MOD_EN_DMX_IN != 0) {
+        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, NULL, 7, NULL);
+        xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, NULL, 5, &consumer_task);
+    }
+    if (app_config->enabled_modules & MOD_EN_DMX_OUT != 0) {
+        xTaskCreate(dmx_tx_task, "dmx_tx", 2048, NULL, 5, &tx_task);
+    }
     return ESP_OK;
 }

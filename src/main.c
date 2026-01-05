@@ -13,10 +13,9 @@
 #include "ws2812.h"
 #include "dmx.h"
 #include "app_config.h"
+#include "hardware_config.h"
 #include "app_config_nvs.h"
 #include "mdns.h"
-
-#define BLINK_GPIO GPIO_NUM_8
 
 static const char *TAG = "MAIN";
 
@@ -32,9 +31,9 @@ void app_main() {
         ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     #endif
 
-    gpio_reset_pin(BLINK_GPIO);
-    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(BLINK_GPIO, 1);
+    gpio_reset_pin(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED_GPIO, 1);
 
     // Initialize NVS
     ESP_ERROR_CHECK(app_config_nvs_init());

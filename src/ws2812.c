@@ -4,9 +4,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ws2812.h"
+#include "hardware_config.h"
 
 #define WS2812_RESET_US 75
-#define WS2812_PIN 3
 static const char *TAG = "WS_2812";
 
 static TaskHandle_t tx_task = NULL;
@@ -40,7 +40,7 @@ static void ws2812_tx_task(void *arg)
     }
 }
 
-void send_ws2812_data(uint8_t universe, const uint8_t * data, uint16_t length) {
+void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) {
     if (!app_config || app_config->ws2812_universe != universe || length > sizeof(tx_data)) {
         return;
     }
@@ -56,7 +56,7 @@ void send_ws2812_data(uint8_t universe, const uint8_t * data, uint16_t length) {
 }
 
 esp_err_t ws2812_init(app_config_t *config) {
-    if (config->ws2812_universe == 0xFF) {
+    if ((config->enabled_modules & MOD_EN_WS2812) == 0) {
         return ESP_OK; // Disabled
     }
 
