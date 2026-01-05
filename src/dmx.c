@@ -14,7 +14,7 @@
 #define DMX_UART_NUM  UART_NUM_1
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
 #define DMX_BREAK_BITS    22 // 22 * 4 us ≈ 88 us
-#define DMX_MAX_FRAME_INTERVAL_MS 900
+#define DMX_MAX_FRAME_INTERVAL_MS 800
 #define MIN_DMX_LEN       16
 
 /*

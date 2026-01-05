@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -16,16 +17,19 @@
 #include "wifi_manager.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
+#include "driver/gpio.h"
+#include "hardware_config.h"
 
 static const char *TAG = "WIFI_MANAGER";
 
 static EventGroupHandle_t wifi_event_group;
 static TimerHandle_t ap_shutdown_timer = NULL;
+static TimerHandle_t s_led_blink_timer = NULL;
 
 #define WIFI_CONNECT_ATTEMPTS 8
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-#define WIFI_CONNECT_TIMEOUT_MS (5 * 1000)
+#define WIFI_CONNECT_TIMEOUT_MS (15 * 1000)
 #define WIFI_AP_TIMEOUT_MS (3 * 60 * 1000)
 
 uint32_t g_ip_addr = 0;
@@ -35,10 +39,51 @@ uint8_t g_mac_addr[6];
 static int s_retry_num = 0;
 static app_config_t *app_config; // Pointer to the global configuration
 
+static void stop_led_blink_timer(void) {
+    if (s_led_blink_timer != NULL) {
+        xTimerStop(s_led_blink_timer, 0);
+        xTimerDelete(s_led_blink_timer, 0);
+        s_led_blink_timer = NULL;
+    }
+}
+
+static void led_blink_timer_callback(TimerHandle_t xTimer) {
+    static bool led_on = false;
+    led_on = !led_on;
+    gpio_set_level(LED_GPIO, led_on);
+}
+
+static void led_blink(void) {
+    if (s_led_blink_timer) {
+        return;
+    }
+    s_led_blink_timer = xTimerCreate("led_blink", pdMS_TO_TICKS(500), pdTRUE, NULL, led_blink_timer_callback);
+    if (s_led_blink_timer) {
+        xTimerStart(s_led_blink_timer, 0);
+    }
+}
+
+static void led_on() {
+    stop_led_blink_timer();
+    gpio_set_level(LED_GPIO, 0);
+}
+
+static void led_off() {
+    stop_led_blink_timer();
+    gpio_set_level(LED_GPIO, 1);
+}
+
+static void led_indicator_init(void) {
+    gpio_reset_pin(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    led_off();
+}
+
 static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
 {
     ESP_LOGI(TAG, "No client connected for 3 minutes. Disabling AP mode.");
     esp_wifi_stop();
+    led_off();
 }
 
 static void set_netif_hostname(esp_netif_t *netif)
@@ -70,12 +115,13 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        led_off();
         if (s_retry_num < WIFI_CONNECT_ATTEMPTS) {
             esp_wifi_connect();
             if (s_retry_num >= 0) {
                 s_retry_num++;
             }
-            ESP_LOGI(TAG, "retry to connect to the AP");
+            ESP_LOGI(TAG, "retry to connect to the AP # %d", s_retry_num);
         } else {
             if (wifi_event_group) {
                 xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
@@ -83,10 +129,11 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         }
         ESP_LOGI(TAG,"connect to the AP fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        led_on();
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         calc_ip_and_broadcast(&event->ip_info);
-        s_retry_num = -1; // After successful connection make attempts infinite 
+        s_retry_num = -1; // After successful connection make attempts infinite
         if (wifi_event_group) {
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         }
@@ -107,6 +154,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 static esp_err_t wifi_init_sta(app_config_t *config)
 {
+    led_off();
+
     esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
     set_netif_hostname(sta_netif);
@@ -138,7 +187,8 @@ static esp_err_t wifi_init_sta(app_config_t *config)
     s_retry_num = 0;
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    wifi_event_group = xEventGroupCreate();
+    xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+
     EventBits_t bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
         pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
 
@@ -152,9 +202,6 @@ static esp_err_t wifi_init_sta(app_config_t *config)
         ESP_LOGE(TAG, "UNEXPECTED EVENT or timeout: %lu", bits);
     }
 
-    vEventGroupDelete(wifi_event_group);
-    wifi_event_group = NULL;
-
     if (ret != ESP_OK) {
         esp_wifi_stop();
     }
@@ -163,6 +210,8 @@ static esp_err_t wifi_init_sta(app_config_t *config)
 
 static void wifi_init_ap(app_config_t *config)
 {
+    led_blink();
+
     esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
     set_netif_hostname(ap_netif);
@@ -203,6 +252,10 @@ static void wifi_init_ap(app_config_t *config)
 
 void wifi_manager_init(app_config_t *config) {
     app_config = config; // Store config globally if needed by event handlers or other functions
+
+    led_indicator_init();
+
+    wifi_event_group = xEventGroupCreate();
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
