@@ -36,6 +36,7 @@ static uint8_t ibeacon_data[] = {
     // Footer
     0x00, 0x0A, 0x00, 0x6E, 0xC5 // mMajor, mMinor, mTxPower
 };
+static ble_addr_t ble_addr;
 static app_config_t *app_config;
 
 static void ble_app_advertise(void);
@@ -210,11 +211,21 @@ static void mode_rgb(uint8_t group, uint8_t r, uint8_t g, uint8_t b, uint8_t w, 
     ibeacon_data[19] = power;
 }
 
+// Set mac address depending on control group
+static void set_ble_mac(uint8_t group) {
+    uint8_t mac[6];
+    memcpy(mac, ble_addr.val, 6);
+    mac[0] += group;
+    ble_hs_id_set_rnd(mac);
+}
+
 static void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "BLE host synchronized.");
-    if (app_config->ambitful_channel) {
+    if (app_config) {
+        ble_hs_id_gen_rnd(0, &ble_addr);
         mode_on();
+        set_ble_mac(0);
         set_fields();
         ble_app_advertise();
     }
@@ -282,6 +293,7 @@ static void adv_next_group(bool lock) {
         xSemaphoreGive(s_ble_data_mutex);
     }
 
+    set_ble_mac(group);
     set_fields();
     ble_app_advertise();
 }
@@ -309,8 +321,8 @@ static void ble_app_advertise(void)
         .itvl_min = BLE_GAP_ADV_ITVL_MS(BLE_INTERVAL_MS * mult),
         .itvl_max = BLE_GAP_ADV_ITVL_MS(BLE_INTERVAL_MS * mult),
     };
-
-    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_DURATION_MS * mult, &params, gap_event, NULL);
+    // ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_DURATION_MS * mult, &params, gap_event, NULL);
+    ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, BLE_DURATION_MS * mult, &params, gap_event, NULL);
 }
 
 void ble_beacon_task(void *param)
