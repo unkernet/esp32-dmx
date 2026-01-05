@@ -14,7 +14,7 @@ static const char *TAG = "AMBUTFUL";
 #define MAX_AMBITFUL_PRIORITY (4)
 #define IDLE_SLOW_DOWN (8)
 
-#define BLE_INTERVAL_MS (25 / 0.625)
+#define BLE_INTERVAL_MS 25
 #define BLE_DURATION_MS 80
 
 static uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
