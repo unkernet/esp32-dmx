@@ -1,5 +1,7 @@
 #include "ambitful_ble.h"
 #include "esp_log.h"
+#include "esp_bt.h"
+#include "esp_mac.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -20,8 +22,9 @@ static const char *TAG = "AMBUTFUL";
 static uint8_t groups_priority[MAX_AMBITFUL_GROUPS];
 static uint8_t ambitful_data[MAX_AMBITFUL_GROUPS * AMBITFUL_SIZE];
 static uint8_t ambitful_last_transmitted_group = 0;
-static uint8_t ambitful_idle_mode = 0;
+static uint8_t ambitful_idle_mode = 1;
 static SemaphoreHandle_t s_ble_data_mutex;
+static TaskHandle_t advertise_task;
 
 // static uint8_t counter = 0; // 0-222
 static uint8_t ibeacon_data[] = {
@@ -36,7 +39,7 @@ static uint8_t ibeacon_data[] = {
     // Footer
     0x00, 0x0A, 0x00, 0x6E, 0xC5 // mMajor, mMinor, mTxPower
 };
-static ble_addr_t ble_addr;
+static uint8_t ble_addr[6];
 static app_config_t *app_config;
 
 static void ble_app_advertise(void);
@@ -214,7 +217,7 @@ static void mode_rgb(uint8_t group, uint8_t r, uint8_t g, uint8_t b, uint8_t w, 
 // Set mac address depending on control group
 static void set_ble_mac(uint8_t group) {
     uint8_t mac[6];
-    memcpy(mac, ble_addr.val, 6);
+    memcpy(mac, ble_addr, 6);
     mac[0] += group;
     ble_hs_id_set_rnd(mac);
 }
@@ -223,11 +226,7 @@ static void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "BLE host synchronized.");
     if (app_config) {
-        ble_hs_id_gen_rnd(0, &ble_addr);
-        mode_on();
-        set_ble_mac(0);
-        set_fields();
-        ble_app_advertise();
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P9);
     }
 }
 
@@ -245,10 +244,8 @@ static void set_fields() {
     }
 }
 
-static void adv_next_group(bool lock) {
-    if (lock) {
-        xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
-    }
+static void adv_next_group() {
+    xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
 
     uint8_t max_priority = 0;
     uint8_t ambitful_groups = app_config->ambitful_groups;
@@ -280,18 +277,20 @@ static void adv_next_group(bool lock) {
 
     uint8_t mode = group_data[0];
     if (mode < 64) {
+        // R, G, B, W, Y
         mode_rgb(group, group_data[1], group_data[2], group_data[3], group_data[4], group_data[5]);
     } else if (mode < 64 * 2) {
+        // Power, H, S
         mode_hsl(group, group_data[1], group_data[2], group_data[3]);
     } else if (mode < 64 * 3) {
+        // Power, CCT, Rg
         mode_cct(group, group_data[1], group_data[2], group_data[3]);
     } else {
+        // Power, Scene, Speed
         mode_fx(group, group_data[1], group_data[2], group_data[3]);
     }
 
-    if (lock) {
-        xSemaphoreGive(s_ble_data_mutex);
-    }
+    xSemaphoreGive(s_ble_data_mutex);
 
     set_ble_mac(group);
     set_fields();
@@ -303,7 +302,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 {
     switch (event->type) {
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            adv_next_group(true);
+            adv_next_group();
             return 0;
 
         default:
@@ -331,6 +330,15 @@ void ble_beacon_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+static void restart_advertise_task(void *arg) {
+    while (1) {
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            ble_gap_adv_stop();
+            adv_next_group();
+        }
+    }
+}
+
 esp_err_t ambitful_ble_init(app_config_t *config)
 {
     if ((config->enabled_modules & MOD_EN_AMBITFUL) == 0 || !config->ambitful_groups) {
@@ -345,7 +353,15 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     app_config = config; // Store config globally
     memset(groups_priority, 0, sizeof(groups_priority));
     memset(ambitful_data, 0, sizeof(ambitful_data));
+    esp_read_mac(ble_addr, ESP_MAC_WIFI_STA);
+    for (uint8_t i = 0; i < 3; i++) {
+        // Reverse MAC address for BLE
+        ble_addr[i] ^= ble_addr[5 - i];
+        ble_addr[5 - i] ^= ble_addr[i];
+        ble_addr[i] ^= ble_addr[5 - i];
+    }
     s_ble_data_mutex = xSemaphoreCreateMutex();
+    xTaskCreate(restart_advertise_task, "advertise_task", 1536, NULL, 5, &advertise_task);
 
     nimble_port_init();
 
@@ -377,10 +393,8 @@ void send_ambitful_dmx_data(uint16_t universe, const uint8_t * data, uint16_t le
     if (changed) {
         increment_counter();
         if (ambitful_idle_mode) {
-            // TODO: Maybe run it in separate thread?
             ambitful_idle_mode = 0;
-            ble_gap_adv_stop();
-            adv_next_group(false);
+            xTaskNotifyGive(advertise_task);
         }
     }
     xSemaphoreGive(s_ble_data_mutex);

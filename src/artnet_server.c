@@ -1,6 +1,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -155,8 +156,10 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     reply->status2 = 0x01; // Supports web browser configuration
     reply->refresh_rate = htons(44);
 
-    snprintf(reply->short_name, sizeof(reply->short_name) - 1, ARTNET_NODE_SHORT_NAME, g_mac_addr[4], g_mac_addr[5]);
-    snprintf(reply->long_name, sizeof(reply->long_name) - 1, ARTNET_NODE_LONG_NAME, g_mac_addr[4], g_mac_addr[5]);
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(reply->short_name, sizeof(reply->short_name) - 1, ARTNET_NODE_SHORT_NAME, mac[4], mac[5]);
+    snprintf(reply->long_name, sizeof(reply->long_name) - 1, ARTNET_NODE_LONG_NAME, mac[4], mac[5]);
     strncpy(reply->node_report, ARTNET_NODE_REPORT, sizeof(reply->node_report) - 1);
 
     reply->ip_address = g_ip_addr;
