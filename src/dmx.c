@@ -6,10 +6,7 @@
 #include "dmx.h"
 #include "hardware_config.h"
 #include <string.h>
-#include "artnet_server.h"
-#include "web_server.h"
-#include "ambitful_ble.h"
-#include "ws2812.h"
+#include "router.h"
 
 #define DMX_UART_NUM  UART_NUM_1
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
@@ -52,11 +49,7 @@ static void dmx_consumer_task(void *arg)
                 const uint8_t *data = frame->data + 1;
                 uint8_t universe = app_config->dmx_in_universe;
 
-                send_ws_dmx_data(universe, data, len);
-                send_ambitful_dmx_data(universe, data, len);
-                send_artnet_dmx_data(universe, data, len, 0);
-                send_ws2812_data(universe, data, len);
-                send_dmx_data(universe, data, len); // Allow passthrough?
+                route_dmx_data(DATA_SOURCE_DMX_IN, universe, data, len);
             }
             xSemaphoreGive(consumer_sem);
         }

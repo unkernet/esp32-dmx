@@ -10,10 +10,7 @@
 #include "web_server.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
-#include "artnet_server.h"
-#include "ambitful_ble.h"
-#include "dmx.h"
-#include "ws2812.h"
+#include "router.h"
 
 #define MAX_WS_CLIENTS 5
 
@@ -221,11 +218,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
                 uint16_t universe = ws_pkt.payload[0] + (ws_pkt.payload[1] << 8);
                 const uint8_t *data = (const uint8_t *)(ws_pkt.payload + 2);
                 uint16_t len = ws_pkt.len - 2;
-                send_artnet_dmx_data(universe, data, len, 0);
-                send_ambitful_dmx_data(universe, data, len);
-                send_dmx_data(universe, data, len);
-                send_ws2812_data(universe, data, len);
-                // ESP_LOGD(TAG, "Received binary WS DMX data for universe %d, length %d", universe, len);
+                route_dmx_data(DATA_SOURCE_WS, universe, data, len);
             } else {
                 ESP_LOGW(TAG, "Received binary WS message too short (len: %d)", ws_pkt.len);
             }

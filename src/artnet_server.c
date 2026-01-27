@@ -7,10 +7,7 @@
 #include "lwip/netdb.h"
 #include "artnet_server.h"
 #include "esp_netif.h"
-#include "web_server.h"
-#include "ambitful_ble.h"
-#include "dmx.h"
-#include "ws2812.h"
+#include "router.h"
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
 
@@ -179,12 +176,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
         return;
     }
 
-    send_ws_dmx_data(universe, dmx_packet->data, length);
-    send_ambitful_dmx_data(universe, dmx_packet->data, length);
-    send_dmx_data(universe, dmx_packet->data, length);
-    send_ws2812_data(universe, dmx_packet->data, length);
-    // just for test, send back to ArtNet
-    // send_artnet_dmx_data(universe, dmx_packet->data, length, dmx_packet->sequence);
+    route_dmx_data(DATA_SOURCE_ARTNET, universe, dmx_packet->data, length);
 }
 
 static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr_in *source_addr) {
@@ -270,7 +262,7 @@ esp_err_t start_artnet_server(app_config_t *config) {
     return ESP_OK;
 }
 
-void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length, uint8_t seq) {
+void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
     if ((app_config->enabled_modules & MOD_EN_ARTNET_OUT) == 0 || length > 512) {
         return;
     }
@@ -278,11 +270,8 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
         return;
     }
 
-    if (seq == 0) {
-        if (++sequence == 0) {
-            sequence = 1;
-        }
-        seq = sequence;
+    if (++sequence == 0) {
+        sequence = 1;
     }
 
     artdmx_packet_t *reply = (artdmx_packet_t *)tx_packet.buffer;
@@ -290,7 +279,7 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
     memcpy(reply->header.id, ARTNET_ID, ARTNET_ID_LENGTH);
     reply->header.opcode = ARTNET_OP_DMX;
     reply->header.prot_ver = htons(14);
-    reply->sequence = seq;
+    reply->sequence = sequence;
     reply->physical = 0;
     reply->universe = universe;
     reply->length = htons(length);
