@@ -26,11 +26,19 @@ static EventGroupHandle_t wifi_event_group;
 static TimerHandle_t ap_shutdown_timer = NULL;
 static TimerHandle_t s_led_blink_timer = NULL;
 
+static esp_netif_t *s_sta_netif = NULL;
+static esp_netif_t *s_ap_netif = NULL;
+
+static void reconnect_task(void *pvParameter);
+static esp_err_t wifi_init_sta(app_config_t *config);
+
+
+#define WIFI_RECONNECT_MS (60 * 1000)
 #define WIFI_CONNECT_ATTEMPTS 8
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 #define WIFI_CONNECT_TIMEOUT_MS (15 * 1000)
-#define WIFI_AP_TIMEOUT_MS (3 * 60 * 1000)
+#define WIFI_AP_TIMEOUT_MS (2 * 60 * 1000)
 
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
@@ -79,11 +87,36 @@ static void led_indicator_init(void) {
     led_off();
 }
 
+static void reconnect_task(void *pvParameter);
+
 static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
 {
-    ESP_LOGI(TAG, "No client connected for 3 minutes. Disabling AP mode.");
+    ESP_LOGI(TAG, "No client connected for 2 minutes. Disabling AP mode.");
     esp_wifi_stop();
+    esp_wifi_deinit();
+    if (s_ap_netif) {
+        esp_netif_destroy(s_ap_netif);
+        s_ap_netif = NULL;
+    }
     led_off();
+    xTaskCreate(reconnect_task, "reconnect_task", 4096, app_config, 5, NULL);
+}
+
+static void reconnect_task(void *pvParameter)
+{
+    app_config_t *config = (app_config_t *)pvParameter;
+    while (1) {
+        ESP_LOGI(TAG, "Attempting to connect to AP...");
+        if (wifi_init_sta(config) == ESP_OK) {
+            ESP_LOGI(TAG, "Connected to AP. Deleting reconnect task.");
+            break;
+        } else {
+            ESP_LOGW(TAG, "Failed to connect to AP. Retrying in %d ms.", WIFI_RECONNECT_MS);
+            // esp_wifi_deinit() is already called inside wifi_init_sta on failure
+            vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_MS));
+        }
+    }
+    vTaskDelete(NULL);
 }
 
 static void set_netif_hostname(esp_netif_t *netif)
@@ -156,17 +189,18 @@ static esp_err_t wifi_init_sta(app_config_t *config)
 {
     led_off();
 
+    s_sta_netif = esp_netif_create_default_wifi_sta();
+
     esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
-    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    set_netif_hostname(sta_netif);
+    set_netif_hostname(s_sta_netif);
 
     if (!config->sta_dhcp_enabled) {
-        esp_netif_dhcpc_stop(sta_netif);
+        esp_netif_dhcpc_stop(s_sta_netif);
         esp_netif_ip_info_t ip_info;
         ip_info.ip.addr = config->sta_ip;
         ip_info.netmask.addr = cidr_len_to_ip_netmask(config->sta_netmask_len);
         ip_info.gw.addr = config->sta_gateway;
-        ESP_ERROR_CHECK(esp_netif_set_ip_info(sta_netif, &ip_info));
+        ESP_ERROR_CHECK(esp_netif_set_ip_info(s_sta_netif, &ip_info));
     }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -204,6 +238,11 @@ static esp_err_t wifi_init_sta(app_config_t *config)
 
     if (ret != ESP_OK) {
         esp_wifi_stop();
+        esp_wifi_deinit();
+        if (s_sta_netif) {
+            esp_netif_destroy(s_sta_netif);
+            s_sta_netif = NULL;
+        }
     }
     return ret;
 }
@@ -212,9 +251,10 @@ static void wifi_init_ap(app_config_t *config)
 {
     led_blink();
 
+    s_ap_netif = esp_netif_create_default_wifi_ap();
+
     esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
-    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
-    set_netif_hostname(ap_netif);
+    set_netif_hostname(s_ap_netif);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -246,7 +286,7 @@ static void wifi_init_ap(app_config_t *config)
     }
 
     esp_netif_ip_info_t ip_info;
-    esp_netif_get_ip_info(ap_netif, &ip_info);
+    esp_netif_get_ip_info(s_ap_netif, &ip_info);
     calc_ip_and_broadcast(&ip_info);
 }
 
@@ -265,9 +305,7 @@ void wifi_manager_init(app_config_t *config) {
     // Check if STA SSID is configured to decide between STA and AP mode
     if (strlen(config->sta_ssid) > 0 && strcmp(config->sta_ssid, "YOUR_STA_SSID") != 0) {
         ESP_LOGI(TAG, "STA SSID configured, attempting to connect in STA mode.");
-        if (wifi_init_sta(config) == ESP_OK) {
-            ESP_LOGI(TAG, "STA mode connected successfully.");
-        } else {
+        if (wifi_init_sta(config) != ESP_OK) {
             ESP_LOGW(TAG, "STA mode failed to connect, falling back to AP mode.");
             wifi_init_ap(config);
         }
