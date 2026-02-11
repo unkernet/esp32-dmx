@@ -57,6 +57,7 @@ void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) 
 
 esp_err_t ws2812_init(app_config_t *config) {
     if ((config->enabled_modules & MOD_EN_WS2812) == 0) {
+        ESP_LOGI(TAG, "disabled");
         return ESP_OK; // Disabled
     }
 

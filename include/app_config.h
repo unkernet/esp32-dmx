@@ -44,7 +44,9 @@ typedef struct __attribute__((packed)) {
     // WS2812 settings
     uint16_t ws2812_universe;
 
-    uint8_t reserved_1[10];
+    uint8_t dmx_repeat_interval; // * 5ms
+
+    uint8_t reserved_1[9];
 } app_config_t;
 
 // Function to get default configuration

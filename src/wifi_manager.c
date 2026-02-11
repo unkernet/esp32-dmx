@@ -1,123 +1,113 @@
 #include <string.h>
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "esp_mac.h"
-#include "nvs_flash.h"
-#include "lwip/ip_addr.h"
-#include "lwip/sockets.h"
 #include "esp_netif.h"
-#include "esp_netif_ip_addr.h"
-#include "wifi_manager.h"
-#include "app_config.h"
-#include "app_config_nvs.h"
+#include "esp_mac.h"
 #include "driver/gpio.h"
+#include "app_config.h"
 #include "hardware_config.h"
 
-static const char *TAG = "WIFI_MANAGER";
+#define WIFI_CONNECT_ATTEMPTS     8
+#define WIFI_CONNECT_TIMEOUT_MS  (15 * 1000)
+#define WIFI_AP_TIMEOUT_MS       (1 * 60 * 1000)
+#define WIFI_RECONNECT_MS        (60 * 1000)
 
-static EventGroupHandle_t wifi_event_group;
-static TimerHandle_t ap_shutdown_timer = NULL;
-static TimerHandle_t s_led_blink_timer = NULL;
-
-static esp_netif_t *s_sta_netif = NULL;
-static esp_netif_t *s_ap_netif = NULL;
-
-static void reconnect_task(void *pvParameter);
-static esp_err_t wifi_init_sta(app_config_t *config);
-
-
-#define WIFI_RECONNECT_MS (60 * 1000)
-#define WIFI_CONNECT_ATTEMPTS 8
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-#define WIFI_CONNECT_TIMEOUT_MS (15 * 1000)
-#define WIFI_AP_TIMEOUT_MS (2 * 60 * 1000)
+#define EVT_RECONNECT_NOW  BIT2
 
+static const char *TAG = "wifi_mgr";
+
+/* ---------- state ---------- */
+
+typedef enum {
+    WIFI_STATE_STA_CONNECTING,
+    WIFI_STATE_STA_CONNECTED,
+    WIFI_STATE_AP_RUNNING,
+    WIFI_STATE_WAIT_RECONNECT,
+} wifi_state_t;
+
+static wifi_state_t wifi_state;
+static bool ever_connected = false;
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
 uint8_t g_mac_addr[6];
-
 static int s_retry_num = 0;
-static app_config_t *app_config; // Pointer to the global configuration
 
-static void stop_led_blink_timer(void) {
-    if (s_led_blink_timer != NULL) {
-        xTimerStop(s_led_blink_timer, 0);
-        xTimerDelete(s_led_blink_timer, 0);
-        s_led_blink_timer = NULL;
+/* ---------- globals ---------- */
+
+static EventGroupHandle_t wifi_event_group;
+static TimerHandle_t ap_timer;
+static esp_netif_t *sta_netif;
+static esp_netif_t *ap_netif;
+static app_config_t *cfg;
+static TimerHandle_t led_timer;
+static bool led_level = false;
+
+/* ---------- LED ---------- */
+
+static void led_hw_set(bool on)
+{
+    /* active low */
+    gpio_set_level(LED_GPIO, on ? 0 : 1);
+}
+
+static void led_timer_cb(TimerHandle_t t)
+{
+    led_level = !led_level;
+    led_hw_set(led_level);
+}
+
+static void led_blink_start(void)
+{
+    if (!led_timer) {
+        led_timer = xTimerCreate(
+            "led_blink",
+            pdMS_TO_TICKS(500),
+            pdTRUE,
+            NULL,
+            led_timer_cb
+        );
+    }
+    led_level = false;
+    xTimerStart(led_timer, 0);
+}
+
+static void led_blink_stop(void)
+{
+    if (led_timer) {
+        xTimerStop(led_timer, 0);
     }
 }
 
-static void led_blink_timer_callback(TimerHandle_t xTimer) {
-    static bool led_on = false;
-    led_on = !led_on;
-    gpio_set_level(LED_GPIO, led_on);
+static void led_on(void)
+{
+    led_blink_stop();
+    led_hw_set(true);
 }
 
-static void led_blink(void) {
-    if (s_led_blink_timer) {
-        return;
-    }
-    s_led_blink_timer = xTimerCreate("led_blink", pdMS_TO_TICKS(500), pdTRUE, NULL, led_blink_timer_callback);
-    if (s_led_blink_timer) {
-        xTimerStart(s_led_blink_timer, 0);
-    }
+static void led_off(void)
+{
+    led_blink_stop();
+    led_hw_set(false);
 }
 
-static void led_on() {
-    stop_led_blink_timer();
-    gpio_set_level(LED_GPIO, 0);
-}
-
-static void led_off() {
-    stop_led_blink_timer();
-    gpio_set_level(LED_GPIO, 1);
-}
-
-static void led_indicator_init(void) {
+static void led_init(void)
+{
     gpio_reset_pin(LED_GPIO);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     led_off();
 }
 
-static void reconnect_task(void *pvParameter);
+/* ---------- forward ---------- */
 
-static void ap_shutdown_timer_callback(TimerHandle_t xTimer)
-{
-    ESP_LOGI(TAG, "No client connected for 2 minutes. Disabling AP mode.");
-    esp_wifi_stop();
-    esp_wifi_deinit();
-    if (s_ap_netif) {
-        esp_netif_destroy(s_ap_netif);
-        s_ap_netif = NULL;
-    }
-    led_off();
-    xTaskCreate(reconnect_task, "reconnect_task", 4096, app_config, 5, NULL);
-}
-
-static void reconnect_task(void *pvParameter)
-{
-    app_config_t *config = (app_config_t *)pvParameter;
-    while (1) {
-        ESP_LOGI(TAG, "Attempting to connect to AP...");
-        if (wifi_init_sta(config) == ESP_OK) {
-            ESP_LOGI(TAG, "Connected to AP. Deleting reconnect task.");
-            break;
-        } else {
-            ESP_LOGW(TAG, "Failed to connect to AP. Retrying in %d ms.", WIFI_RECONNECT_MS);
-            // esp_wifi_deinit() is already called inside wifi_init_sta on failure
-            vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_MS));
-        }
-    }
-    vTaskDelete(NULL);
-}
+static bool wifi_start_sta(void);
+static void wifi_start_ap(void);
 
 static void set_netif_hostname(esp_netif_t *netif)
 {
@@ -134,183 +124,196 @@ static void calc_ip_and_broadcast(esp_netif_ip_info_t *ip_info)
     g_broadcast_addr = (g_ip_addr & netmask) | ~netmask;
 }
 
-// Helper function to convert CIDR prefix length to uint32_t netmask
-static uint32_t cidr_len_to_ip_netmask(uint8_t cidr_len) {
-    if (cidr_len > 32) {
-        return 0; // Invalid CIDR length
-    }
-    return (0xFFFFFFFF << (32 - cidr_len));
+/* ---------- timers ---------- */
+
+static void ap_timeout_cb(TimerHandle_t t)
+{
+    ESP_LOGI(TAG, "AP timeout");
+    led_off();
+    BaseType_t hp = pdFALSE;
+    wifi_state = WIFI_STATE_WAIT_RECONNECT;
+    xEventGroupSetBitsFromISR(wifi_event_group, EVT_RECONNECT_NOW, &hp);
+    portYIELD_FROM_ISR(hp);
 }
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
+/* ---------- event handler ---------- */
+
+static void wifi_event_handler(void *arg,
+                               esp_event_base_t base,
+                               int32_t id,
+                               void *data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+
         led_off();
-        if (s_retry_num < WIFI_CONNECT_ATTEMPTS) {
-            esp_wifi_connect();
-            if (s_retry_num >= 0) {
-                s_retry_num++;
-            }
-            ESP_LOGI(TAG, "retry to connect to the AP # %d", s_retry_num);
-        } else {
-            if (wifi_event_group) {
-                xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
-            }
-        }
-        ESP_LOGI(TAG,"connect to the AP fail");
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        led_on();
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        calc_ip_and_broadcast(&event->ip_info);
-        s_retry_num = -1; // After successful connection make attempts infinite
-        if (wifi_event_group) {
-            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        }
-    } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        // ESP_LOGI(TAG, "station "MACSTR" join, AID=%d", MAC2STR(event->mac), event->aid);
 
-        if (ap_shutdown_timer != NULL) {
-            xTimerStop(ap_shutdown_timer, 0);
-            xTimerDelete(ap_shutdown_timer, 0);
-            ap_shutdown_timer = NULL;
+        ESP_LOGI(TAG, "STA_DISCONNECTED %d", s_retry_num);
+
+        if (s_retry_num == -1) {
+            esp_wifi_start();
+            esp_wifi_connect();
+            return;
         }
-    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        // ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
+
+        if (s_retry_num < WIFI_CONNECT_ATTEMPTS) {
+            s_retry_num++;
+            esp_wifi_start();
+            esp_wifi_connect();
+        } else {
+            xEventGroupSetBits(wifi_event_group, WIFI_FAIL_BIT);
+        }
+    }
+
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        led_on();
+
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) data;
+        calc_ip_and_broadcast(&event->ip_info);
+
+        s_retry_num = -1;
+        wifi_state = WIFI_STATE_STA_CONNECTED;
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+
+    if (base == WIFI_EVENT && id == WIFI_EVENT_AP_STACONNECTED) {
+        if (ap_timer) {
+            xTimerStop(ap_timer, 0);
+        }
     }
 }
 
-static esp_err_t wifi_init_sta(app_config_t *config)
+/* ---------- STA ---------- */
+
+static bool wifi_start_sta(void)
 {
+    ESP_LOGI(TAG, "STA start");
     led_off();
 
-    s_sta_netif = esp_netif_create_default_wifi_sta();
+    wifi_config_t wc = {0};
+    strncpy((char *)wc.sta.ssid, cfg->sta_ssid, sizeof(wc.sta.ssid));
+    strncpy((char *)wc.sta.password, cfg->sta_password, sizeof(wc.sta.password));
+    wc.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
-    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
-    set_netif_hostname(s_sta_netif);
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_set_config(WIFI_IF_STA, &wc);
 
-    if (!config->sta_dhcp_enabled) {
-        esp_netif_dhcpc_stop(s_sta_netif);
-        esp_netif_ip_info_t ip_info;
-        ip_info.ip.addr = config->sta_ip;
-        ip_info.netmask.addr = cidr_len_to_ip_netmask(config->sta_netmask_len);
-        ip_info.gw.addr = config->sta_gateway;
-        ESP_ERROR_CHECK(esp_netif_set_ip_info(s_sta_netif, &ip_info));
+    if (s_retry_num > 0) {
+        s_retry_num = 0;
     }
+    wifi_state = WIFI_STATE_STA_CONNECTING;
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    wifi_config_t wifi_config = {
-        .sta = {
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-        },
-    };
-    strncpy((char*)wifi_config.sta.ssid, config->sta_ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char*)wifi_config.sta.password, config->sta_password, sizeof(wifi_config.sta.password));
-    wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
-    wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-    s_retry_num = 0;
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_start();
+    esp_wifi_connect();
+    
+    esp_read_mac(g_mac_addr, ESP_MAC_WIFI_STA);
+    set_netif_hostname(sta_netif);
 
     xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
-        pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
+    EventBits_t bits = xEventGroupWaitBits(
+        wifi_event_group,
+        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+        pdFALSE,
+        pdFALSE,
+        pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS)
+    );
 
-    esp_err_t ret = ESP_FAIL;
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s", config->sta_ssid);
-        ret = ESP_OK;
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s", config->sta_ssid);
-    } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT or timeout: %lu", bits);
+        ESP_LOGI(TAG, "STA connected");
+        return true;
     }
 
-    if (ret != ESP_OK) {
-        esp_wifi_stop();
-        esp_wifi_deinit();
-        if (s_sta_netif) {
-            esp_netif_destroy(s_sta_netif);
-            s_sta_netif = NULL;
-        }
-    }
-    return ret;
+    ESP_LOGW(TAG, "STA failed");
+    wifi_state = WIFI_STATE_WAIT_RECONNECT;
+
+    return false;
 }
 
-static void wifi_init_ap(app_config_t *config)
-{
-    led_blink();
+/* ---------- AP ---------- */
 
-    s_ap_netif = esp_netif_create_default_wifi_ap();
+static void wifi_start_ap(void)
+{
+    ESP_LOGI(TAG, "AP start");
+    led_blink_start();
+
+    wifi_config_t wc = {0};
+    strncpy((char *)wc.ap.ssid, cfg->ap_ssid, sizeof(wc.ap.ssid));
+    strncpy((char *)wc.ap.password, cfg->ap_password, sizeof(wc.ap.password));
+    wc.ap.max_connection = 4;
+    wc.ap.authmode = strlen(cfg->ap_password) ?
+                     WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+
+    esp_wifi_set_mode(WIFI_MODE_AP);
+    esp_wifi_set_config(WIFI_IF_AP, &wc);
+    esp_wifi_start();
 
     esp_read_mac(g_mac_addr, ESP_MAC_WIFI_SOFTAP);
-    set_netif_hostname(s_ap_netif);
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid_len = strlen(config->ap_ssid),
-            .max_connection = 4,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK,
-        },
-    };
-    strncpy((char*)wifi_config.ap.ssid, config->ap_ssid, sizeof(wifi_config.ap.ssid));
-    strncpy((char*)wifi_config.ap.password, config->ap_password, sizeof(wifi_config.ap.password));
-    wifi_config.ap.ssid[sizeof(wifi_config.ap.ssid) - 1] = '\0';
-    wifi_config.ap.password[sizeof(wifi_config.ap.password) - 1] = '\0';
-
-    if (strlen(config->ap_password) == 0) {
-        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-
-    ap_shutdown_timer = xTimerCreate("AP_SHUTDOWN", pdMS_TO_TICKS(WIFI_AP_TIMEOUT_MS), pdFALSE, (void *)0, ap_shutdown_timer_callback);
-    if (ap_shutdown_timer) {
-        xTimerStart(ap_shutdown_timer, 0);
-    }
-
+    set_netif_hostname(ap_netif);
     esp_netif_ip_info_t ip_info;
-    esp_netif_get_ip_info(s_ap_netif, &ip_info);
+    esp_netif_get_ip_info(ap_netif, &ip_info);
     calc_ip_and_broadcast(&ip_info);
+
+    wifi_state = WIFI_STATE_AP_RUNNING;
+
+    if (!ap_timer) {
+        ap_timer = xTimerCreate(
+            "ap_timer",
+            pdMS_TO_TICKS(WIFI_AP_TIMEOUT_MS),
+            pdFALSE,
+            NULL,
+            ap_timeout_cb
+        );
+    }
+    xTimerStart(ap_timer, 0);
 }
 
-void wifi_manager_init(app_config_t *config) {
-    app_config = config; // Store config globally if needed by event handlers or other functions
+/* ---------- reconnect task ---------- */
 
-    led_indicator_init();
+static void reconnect_task(void *arg)
+{
+    while (1) {
+        EventBits_t bits = xEventGroupWaitBits(
+            wifi_event_group,
+            EVT_RECONNECT_NOW,
+            pdTRUE,        // clear on exit
+            pdFALSE,
+            pdMS_TO_TICKS(WIFI_RECONNECT_MS)
+        );
+        if (wifi_state == WIFI_STATE_WAIT_RECONNECT) {
+            esp_wifi_stop();
+            wifi_start_sta();
+        }
+    }
+}
 
+/* ---------- init ---------- */
+
+void wifi_manager_init(app_config_t *config)
+{
+    cfg = config;
+
+    led_init();
     wifi_event_group = xEventGroupCreate();
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+    esp_netif_init();
+    esp_event_loop_create_default();
 
-    // Check if STA SSID is configured to decide between STA and AP mode
-    if (strlen(config->sta_ssid) > 0 && strcmp(config->sta_ssid, "YOUR_STA_SSID") != 0) {
-        ESP_LOGI(TAG, "STA SSID configured, attempting to connect in STA mode.");
-        if (wifi_init_sta(config) != ESP_OK) {
-            ESP_LOGW(TAG, "STA mode failed to connect, falling back to AP mode.");
-            wifi_init_ap(config);
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL);
+
+    sta_netif = esp_netif_create_default_wifi_sta();
+    ap_netif  = esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t wicfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_wifi_init(&wicfg);
+
+    xTaskCreate(reconnect_task, "wifi_reconnect", 4096, NULL, 5, NULL);
+
+    if (strlen(cfg->sta_ssid)) {
+        if (!wifi_start_sta()) {
+            wifi_start_ap();
         }
     } else {
-        ESP_LOGI(TAG, "No STA SSID configured, starting in AP mode.");
-        wifi_init_ap(config);
+        wifi_start_ap();
     }
 }

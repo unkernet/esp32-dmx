@@ -342,6 +342,7 @@ static void restart_advertise_task(void *arg) {
 esp_err_t ambitful_ble_init(app_config_t *config)
 {
     if ((config->enabled_modules & MOD_EN_AMBITFUL) == 0 || !config->ambitful_groups) {
+        ESP_LOGI(TAG, "disabled");
         return ESP_OK;
     }
     if (config->ambitful_groups > MAX_AMBITFUL_GROUPS) {

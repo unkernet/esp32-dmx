@@ -132,7 +132,9 @@ const struct = [
 
   ['ws2812_universe', 'u16'],
 
-  ['reserved_1', 's10'],
+  ['dmx_repeat_interval', 'u8'],
+
+  ['reserved_1', 's9'],
 ];
 
 const MOD_EN_DMX_IN     = (1<<0);
@@ -180,6 +182,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         $('en_dmx_out').checked = (config.enabled_modules & MOD_EN_DMX_OUT) > 0;
         $('dmx_in_universe').value = config.dmx_in_universe;
         $('dmx_out_universe').value = config.dmx_out_universe;
+        $('dmx_repeat_interval').value = (config.dmx_repeat_interval || 1) * 5;
 
         $('en_ws2812').checked = (config.enabled_modules & MOD_EN_WS2812) > 0;
         $('ws2812_universe').value = config.ws2812_universe;
@@ -218,6 +221,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             dmx_in_universe: parseInt($('dmx_in_universe').value, 10),
             dmx_out_universe: parseInt($('dmx_out_universe').value, 10),
+            dmx_repeat_interval: (parseInt($('dmx_repeat_interval').value, 10) / 5) | 0,
 
             ws2812_universe: parseInt($('ws2812_universe').value, 10),
           };
