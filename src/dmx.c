@@ -10,8 +10,7 @@
 
 #define DMX_UART_NUM  UART_NUM_1
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
-#define DMX_BREAK_BITS    22 // 22 * 4 us ≈ 88 us
-#define DMX_MAX_FRAME_INTERVAL_MS 800
+#define DMX_BREAK_BITS    23 // 23 * 4 us = 92 us
 #define MIN_DMX_LEN       16
 
 /*
@@ -158,25 +157,37 @@ static void dmx_rx_task(void *arg)
 
 static void dmx_tx_task(void *arg)
 {
+    TickType_t max_frame_interval = pdMS_TO_TICKS(MAX(0, app_config->dmx_repeat_interval * 5 - 1));
+    static uint8_t tx_data[DMX_BUF_SIZE];
+    static size_t tx_data_len;
     while (1) {
         bool should_transmit_now = false;
-        BaseType_t notified = ulTaskNotifyTake(pdTRUE, dmx_data_was_sent ? pdMS_TO_TICKS(DMX_MAX_FRAME_INTERVAL_MS) : portMAX_DELAY);
+        BaseType_t notified = ulTaskNotifyTake(pdTRUE, dmx_data_was_sent ? max_frame_interval : portMAX_DELAY);
 
         if (notified > 0) {
-            // Notified: new data is ready in dmx_tx_buf and tx_sem is taken by sender.
-            should_transmit_now = true;
+            // Notified: new data is ready in dmx_tx_buf
+            if (xSemaphoreTake(tx_sem, portMAX_DELAY) == pdTRUE) {
+                if (dmx_tx_buf.len <= DMX_BUF_SIZE) {
+                    tx_data_len = dmx_tx_buf.len;
+                    memcpy(tx_data, dmx_tx_buf.data, dmx_tx_buf.len);
+                    should_transmit_now = true;
+                }
+                xSemaphoreGive(tx_sem);
+            }
         } else if (dmx_data_was_sent) {
             // Timeout: no new data. Re-send last frame if we have one.
-            // To prevent data corruption, we should acquire the lock.
-            if (xSemaphoreTake(tx_sem, 0) == pdTRUE) {
-                should_transmit_now = true;
-            }
+            should_transmit_now = true;
         }
 
         if (should_transmit_now) {
-            uart_write_bytes_with_break(DMX_UART_NUM, (const char *)dmx_tx_buf.data, dmx_tx_buf.len, DMX_BREAK_BITS);
+            // The DMX break occurs at the beginning of the frame
+            uart_set_line_inverse(DMX_UART_NUM, UART_SIGNAL_TXD_INV);
+            esp_rom_delay_us(92); // Break
+            uart_set_line_inverse(DMX_UART_NUM, UART_SIGNAL_INV_DISABLE);
+            esp_rom_delay_us(8); // Mark After Break
+            uart_write_bytes(DMX_UART_NUM, tx_data, tx_data_len);
             uart_wait_tx_done(DMX_UART_NUM, portMAX_DELAY);
-            xSemaphoreGive(tx_sem);
+            vTaskDelay(MAX(1, pdMS_TO_TICKS(1))); // Mark Time After Slot, 1ms
         }
     }
 }
@@ -197,12 +208,14 @@ void send_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length)
     memcpy(dmx_tx_buf.data + 1, data, length);
     dmx_data_was_sent = true;
 
+    xSemaphoreGive(tx_sem);
     xTaskNotifyGive(tx_task);
 }
 
 esp_err_t dmx_init(app_config_t *config)
 {
-    if (config->enabled_modules & (MOD_EN_DMX_IN | MOD_EN_DMX_OUT) == 0) {
+    if ((config->enabled_modules & (MOD_EN_DMX_IN | MOD_EN_DMX_OUT)) == 0) {
+        ESP_LOGI(TAG, "disabled");
         return ESP_OK;
     }
     app_config = config;
@@ -225,12 +238,19 @@ esp_err_t dmx_init(app_config_t *config)
     xSemaphoreGive(tx_sem);
     xSemaphoreGive(consumer_sem);
 
-    if (app_config->enabled_modules & MOD_EN_DMX_IN != 0) {
+    if ((app_config->enabled_modules & MOD_EN_DMX_IN) != 0) {
         xTaskCreate(dmx_rx_task, "dmx_rx", 2048, NULL, 7, NULL);
         xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, NULL, 5, &consumer_task);
+    } else {
+        ESP_LOGI(TAG, "rx disabled");
     }
-    if (app_config->enabled_modules & MOD_EN_DMX_OUT != 0) {
+    if ((app_config->enabled_modules & MOD_EN_DMX_OUT) != 0) {
+        if (app_config->dmx_repeat_interval < 1) {
+            app_config->dmx_repeat_interval = 1;
+        }
         xTaskCreate(dmx_tx_task, "dmx_tx", 2048, NULL, 5, &tx_task);
+    } else {
+        ESP_LOGI(TAG, "tx disabled");
     }
     return ESP_OK;
 }
