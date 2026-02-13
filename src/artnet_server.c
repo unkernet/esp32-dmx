@@ -9,7 +9,6 @@
 #include "esp_netif.h"
 #include "router.h"
 #include "freertos/semphr.h"
-#include "driver/gpio.h"
 
 // Art-Net Constants
 #define ARTNET_PORT 6454
@@ -118,11 +117,13 @@ static app_config_t *app_config;
 extern uint32_t g_ip_addr;
 extern uint32_t g_broadcast_addr;
 extern uint8_t g_mac_addr[6];
+extern wifi_state_t wifi_state;
 
 static void send_artpollreply(struct sockaddr_in *source_addr) {
     if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
         return;
     }
+    uint8_t enabled_modules = app_config->enabled_modules;
     artpollreply_packet_t *reply = (artpollreply_packet_t *)tx_packet.buffer;
     memset(reply, 0, sizeof(*reply));
     
@@ -140,9 +141,9 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     reply->status1 = 0x20; // Indicator state: Normal, Port-Address programming enabled
     // reply->esta_mfg = (0); // Unregistered manufacturer
     reply->num_ports = htons(1); // One DMX port
-    reply->port_types[0] = 0xC0; // DMX512, Output, Input
-    reply->good_input[0] = 0x80; // Data received, no errors
-    reply->good_output[0] = 0x80; // Data transmitted, no errors
+    reply->port_types[0] = (enabled_modules & MOD_EN_DMX_IN ? 0x40 : 0) | (enabled_modules & MOD_EN_DMX_OUT ? 0x80 : 0);
+    reply->good_input[0] = (enabled_modules & MOD_EN_DMX_IN ? 0x80 : 0); // Data received, no errors
+    reply->good_output[0] = (enabled_modules & MOD_EN_DMX_OUT ? 0x80 : 0); // Data transmitted, no errors
     reply->sw_in[0] = app_config->dmx_in_universe;
     reply->sw_out[0] = app_config->dmx_out_universe;
     // reply->acn_priority = 0;
@@ -150,7 +151,7 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     // reply->sw_remote = 0;
     // reply->style = 0; // Stype: Node
     reply->bind_index = 1;
-    reply->status2 = 0x01; // Supports web browser configuration
+    reply->status2 = 0x01 | (wifi_state == WIFI_STATE_STA_CONNECTED ? 0x06 : (wifi_state == WIFI_STATE_AP_RUNNING ? 0x04 : 0 )); // Supports web browser configuration, DHCP Configured
     reply->refresh_rate = htons(44);
 
     uint8_t mac[6];

@@ -15,6 +15,14 @@
 #define MOD_EN_WS2812      (1<<4)
 #define MOD_EN_ESPNOW      (1<<5)
 
+typedef enum {
+    WIFI_STATE_STA_CONNECTING,
+    WIFI_STATE_STA_CONNECTED,
+    WIFI_STATE_STA_CONNECTED_MANUAL,
+    WIFI_STATE_AP_RUNNING,
+    WIFI_STATE_WAIT_RECONNECT,
+} wifi_state_t;
+
 // Configuration structure
 typedef struct __attribute__((packed)) {
     // Station (STA) mode settings

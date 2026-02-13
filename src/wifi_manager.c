@@ -11,6 +11,7 @@
 #include "driver/gpio.h"
 #include "app_config.h"
 #include "hardware_config.h"
+#include <lwip/inet.h>
 
 #define WIFI_CONNECT_ATTEMPTS     8
 #define WIFI_CONNECT_TIMEOUT_MS  (15 * 1000)
@@ -25,14 +26,7 @@ static const char *TAG = "wifi_mgr";
 
 /* ---------- state ---------- */
 
-typedef enum {
-    WIFI_STATE_STA_CONNECTING,
-    WIFI_STATE_STA_CONNECTED,
-    WIFI_STATE_AP_RUNNING,
-    WIFI_STATE_WAIT_RECONNECT,
-} wifi_state_t;
-
-static wifi_state_t wifi_state;
+wifi_state_t wifi_state;
 static bool ever_connected = false;
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
@@ -171,7 +165,7 @@ static void wifi_event_handler(void *arg,
         calc_ip_and_broadcast(&event->ip_info);
 
         s_retry_num = -1;
-        wifi_state = WIFI_STATE_STA_CONNECTED;
+        wifi_state = cfg->sta_dhcp_enabled ? WIFI_STATE_STA_CONNECTED : WIFI_STATE_STA_CONNECTED_MANUAL;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 
@@ -188,6 +182,23 @@ static bool wifi_start_sta(void)
 {
     ESP_LOGI(TAG, "STA start");
     led_off();
+
+    if (!cfg->sta_dhcp_enabled) {
+        esp_netif_dhcpc_stop(sta_netif);
+
+        esp_netif_ip_info_t ip_info;
+        ip_info.ip.addr = cfg->sta_ip;
+        ip_info.gw.addr = cfg->sta_gateway;
+        if (cfg->sta_netmask_len <= 32) {
+            ip_info.netmask.addr = htonl(~((1U << (32 - cfg->sta_netmask_len)) - 1));
+        } else {
+            ip_info.netmask.addr = htonl(0xFFFFFF00);
+        }
+        
+        esp_netif_set_ip_info(sta_netif, &ip_info);
+    } else {
+        esp_netif_dhcpc_start(sta_netif);
+    }
 
     wifi_config_t wc = {0};
     strncpy((char *)wc.sta.ssid, cfg->sta_ssid, sizeof(wc.sta.ssid));
