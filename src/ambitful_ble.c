@@ -361,8 +361,9 @@ esp_err_t ambitful_ble_init(app_config_t *config)
         ble_addr[5 - i] ^= ble_addr[i];
         ble_addr[i] ^= ble_addr[5 - i];
     }
+    ble_addr[5] &= 0x3f; // Non-Resolvable Private Address (NRPA)
     s_ble_data_mutex = xSemaphoreCreateMutex();
-    xTaskCreate(restart_advertise_task, "advertise_task", 1536, NULL, 5, &advertise_task);
+    xTaskCreate(restart_advertise_task, "advertise_task", 2048, NULL, 5, &advertise_task);
 
     nimble_port_init();
 
