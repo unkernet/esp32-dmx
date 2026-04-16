@@ -14,6 +14,8 @@
 #define MOD_EN_AMBITFUL    (1<<3)
 #define MOD_EN_WS2812      (1<<4)
 #define MOD_EN_ESPNOW      (1<<5)
+#define MOD_EN_DMX_2_IN      (1<<6)
+#define MOD_EN_DMX_2_OUT     (1<<7)
 
 typedef enum {
     WIFI_STATE_STA_CONNECTING,
@@ -54,7 +56,12 @@ typedef struct __attribute__((packed)) {
 
     uint8_t dmx_repeat_interval; // * 5ms
 
-    uint8_t reserved_1[9];
+    // DMX 2 settings
+    uint16_t dmx_2_in_universe;
+    uint16_t dmx_2_out_universe;
+    uint8_t dmx_2_repeat_interval;
+
+    uint8_t reserved_1[4];
 } app_config_t;
 
 // Function to get default configuration

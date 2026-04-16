@@ -6,14 +6,17 @@
 #include "esp_spiffs.h"
 #include "esp_pm.h"
 #include "driver/gpio.h"
+#include "hardware_config.h"
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "artnet_server.h"
 #include "ambitful_ble.h"
 #include "ws2812.h"
 #include "dmx.h"
+#if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
+#include "dmx_2.h"
+#endif
 #include "app_config.h"
-#include "hardware_config.h"
 #include "app_config_nvs.h"
 #include "mdns.h"
 
@@ -65,6 +68,9 @@ void app_main() {
     wifi_manager_init(&app_config);
     ambitful_ble_init(&app_config);
     dmx_init(&app_config);
+    #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
+    dmx_2_init(&app_config);
+    #endif
     ws2812_init(&app_config);
     start_webserver(&app_config);
     start_artnet_server(&app_config);
