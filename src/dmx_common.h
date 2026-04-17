@@ -5,6 +5,8 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#include "router.h"
+
 /*
  * On ESP32 UART (ESP-IDF), one extra zero byte is consistently observed
  * at the end of each frame when using UART_BREAK detection.
@@ -24,10 +26,14 @@ typedef struct {
     uint16_t out_universe;
     uint8_t repeat_interval;
     uint8_t enabled;
+    dmx_data_source_t source;
+    const char *instance_name;
     TaskHandle_t tx_task;
     TaskHandle_t consumer_task;
     dmx_frame_t dmx_tx_buf;
     dmx_frame_t dmx_rx_buf;
+    uint8_t tx_data_cache[DMX_BUF_SIZE];
+    size_t tx_data_len_cache;
     SemaphoreHandle_t tx_sem;
     SemaphoreHandle_t consumer_sem;
     QueueHandle_t uart_evt_queue;

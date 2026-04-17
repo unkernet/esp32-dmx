@@ -5,7 +5,8 @@
 
 typedef enum {
     DATA_SOURCE_ARTNET,
-    DATA_SOURCE_DMX_IN,
+    DATA_SOURCE_DMX_1_IN,
+    DATA_SOURCE_DMX_2_IN,
     DATA_SOURCE_WS
 } dmx_data_source_t;
 

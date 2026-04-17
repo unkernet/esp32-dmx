@@ -14,7 +14,7 @@
 #include <lwip/inet.h>
 
 #define WIFI_CONNECT_ATTEMPTS     8
-#define WIFI_CONNECT_TIMEOUT_MS  (15 * 1000)
+#define WIFI_CONNECT_TIMEOUT_MS  (20 * 1000)
 #define WIFI_AP_TIMEOUT_MS       (1 * 60 * 1000)
 #define WIFI_RECONNECT_MS        (60 * 1000)
 

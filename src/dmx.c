@@ -11,7 +11,7 @@
 
 #define DMX_UART_NUM      UART_NUM_1
 
-static const char *TAG = "DMX_2";
+static const char *TAG = "DMX";
 static app_config_t *app_config;
 static dmx_config dmx_cfg;
 
@@ -27,12 +27,14 @@ void send_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length)
 esp_err_t dmx_init(app_config_t *config)
 {
     if ((config->enabled_modules & (MOD_EN_DMX_IN | MOD_EN_DMX_OUT)) == 0) {
-        ESP_LOGI(TAG, "1 disabled");
+        ESP_LOGI(TAG, "disabled");
         return ESP_OK;
     }
     app_config = config;
 
     dmx_cfg.uart_num = DMX_UART_NUM;
+    dmx_cfg.instance_name = TAG;
+    dmx_cfg.source = DATA_SOURCE_DMX_1_IN;
     dmx_cfg.in_universe = config->dmx_in_universe;
     dmx_cfg.out_universe = config->dmx_out_universe;
     dmx_cfg.repeat_interval = config->dmx_repeat_interval;

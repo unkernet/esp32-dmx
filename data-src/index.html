@@ -44,7 +44,7 @@
     </style>
 </head>
 <body>
-    <h1>ESP32 DMX Configuration</h1>
+    <h1>ESP-DMX Configuration</h1>
 
     <form id="configForm">
         <div class="section">
@@ -90,6 +90,20 @@
             <input type="number" id="dmx_out_universe" name="dmx_out_universe" min="0" max="65535" value="0"><br>
             <label for="dmx_repeat_interval">Maximum interval between DMX frames, ms (5-1250):</label>
             <input type="number" id="dmx_repeat_interval" name="dmx_repeat_interval" min="5" max="1250" value="0"><br>
+        </div>
+
+        <div class="section">
+            <h2>Wireless DMX Settings</h2>
+
+            <label><input type="checkbox" id="en_dmx_2_in" name="en_dmx_2_in"> Enable input</label>
+            <label for="dmx_2_in_universe">Input universe, DMX → ArtNet (0-65535):</label>
+            <input type="number" id="dmx_2_in_universe" name="dmx_2_in_universe" min="0" max="65535" value="0"><br>
+
+            <label><input type="checkbox" id="en_dmx_2_out" name="en_dmx_2_out"> Enable output</label>
+            <label for="dmx_2_out_universe">Output universe, ArtNet → DMX (0-65535):</label>
+            <input type="number" id="dmx_2_out_universe" name="dmx_2_out_universe" min="0" max="65535" value="0"><br>
+            <label for="dmx_2_repeat_interval">Maximum interval between DMX frames, ms (5-1250):</label>
+            <input type="number" id="dmx_2_repeat_interval" name="dmx_2_repeat_interval" min="5" max="1250" value="0"><br>
         </div>
 
         <div class="section">

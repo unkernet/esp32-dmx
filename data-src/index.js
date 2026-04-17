@@ -134,15 +134,21 @@ const struct = [
 
   ['dmx_repeat_interval', 'u8'],
 
-  ['reserved_1', 's9'],
+  ['dmx_2_in_universe', 'u16'],
+  ['dmx_2_out_universe', 'u16'],
+  ['dmx_2_repeat_interval', 'u8'],
+
+  ['reserved_1', 's4'],
 ];
 
-const MOD_EN_DMX_IN     = (1<<0);
-const MOD_EN_DMX_OUT    = (1<<1);
-const MOD_EN_ARTNET_OUT = (1<<2);
-const MOD_EN_AMBITFUL   = (1<<3);
-const MOD_EN_WS2812     = (1<<4);
-const MOD_EN_ESPNOW     = (1<<5);
+const MOD_EN_DMX_IN      = (1<<0);
+const MOD_EN_DMX_OUT     = (1<<1);
+const MOD_EN_ARTNET_OUT  = (1<<2);
+const MOD_EN_AMBITFUL    = (1<<3);
+const MOD_EN_WS2812      = (1<<4);
+const MOD_EN_ESPNOW      = (1<<5);
+const MOD_EN_DMX_2_IN    = (1<<6);
+const MOD_EN_DMX_2_OUT   = (1<<7);
 
 const $ = document.getElementById.bind(document);
 
@@ -184,6 +190,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         $('dmx_out_universe').value = config.dmx_out_universe;
         $('dmx_repeat_interval').value = (config.dmx_repeat_interval || 1) * 5;
 
+        $('en_dmx_2_in').checked = (config.enabled_modules & MOD_EN_DMX_2_IN) > 0;
+        $('en_dmx_2_out').checked = (config.enabled_modules & MOD_EN_DMX_2_OUT) > 0;
+        $('dmx_2_in_universe').value = config.dmx_2_in_universe;
+        $('dmx_2_out_universe').value = config.dmx_2_out_universe;
+        $('dmx_2_repeat_interval').value = (config.dmx_2_repeat_interval || 1) * 5;
+
         $('en_ws2812').checked = (config.enabled_modules & MOD_EN_WS2812) > 0;
         $('ws2812_universe').value = config.ws2812_universe;
 
@@ -212,6 +224,8 @@ document.addEventListener('DOMContentLoaded', async function() {
               ($('en_ambitful').checked ? MOD_EN_AMBITFUL : 0) | 
               ($('en_dmx_in').checked ? MOD_EN_DMX_IN : 0) | 
               ($('en_dmx_out').checked ? MOD_EN_DMX_OUT : 0) | 
+              ($('en_dmx_2_in').checked ? MOD_EN_DMX_2_IN : 0) | 
+              ($('en_dmx_2_out').checked ? MOD_EN_DMX_2_OUT : 0) | 
               ($('en_ws2812').checked ? MOD_EN_WS2812 : 0),
 
             ambitful_universe: parseInt($('ambitful_universe').value, 10),
@@ -222,6 +236,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             dmx_in_universe: parseInt($('dmx_in_universe').value, 10),
             dmx_out_universe: parseInt($('dmx_out_universe').value, 10),
             dmx_repeat_interval: (parseInt($('dmx_repeat_interval').value, 10) / 5) | 0,
+
+            dmx_2_in_universe: parseInt($('dmx_2_in_universe').value, 10),
+            dmx_2_out_universe: parseInt($('dmx_2_out_universe').value, 10),
+            dmx_2_repeat_interval: (parseInt($('dmx_2_repeat_interval').value, 10) / 5) | 0,
 
             ws2812_universe: parseInt($('ws2812_universe').value, 10),
           };

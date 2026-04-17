@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "driver/uart.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "dmx_common.h"
 #include "hardware_config.h"
@@ -11,8 +12,7 @@
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
 #define DMX_BREAK_BITS    23 // 23 * 4 us = 92 us
 #define MIN_DMX_LEN       16
-
-static const char *TAG = "DMX_COMMON";
+// #define DMX_BREAK_AFTER_SLOT // Comment this line to send Brake before slot
 
 static void dmx_consumer_task(void *arg)
 {
@@ -23,9 +23,9 @@ static void dmx_consumer_task(void *arg)
             if (frame->len >= MIN_DMX_LEN + 1 && frame->data[0] == 0) {
                 size_t len = frame->len - 1;
                 const uint8_t *data = frame->data + 1;
-                uint8_t universe = cfg->in_universe;
+                uint16_t universe = cfg->in_universe;
 
-                route_dmx_data(DATA_SOURCE_DMX_IN, universe, data, len);
+                route_dmx_data(cfg->source, universe, data, len);
             }
             xSemaphoreGive(cfg->consumer_sem);
         }
@@ -64,6 +64,39 @@ static void dmx_consumer_task(void *arg)
  *  - This guarantees that the full DMX frame is read contiguously,
  *    even though the last portion arrives after the BREAK event.
  */
+static void uart_dump(dmx_config *cfg, size_t to_read) {
+    // Just remove bytes from internal buffer
+    uint8_t dump[32];
+    int n;
+    while (to_read && (n = uart_read_bytes(cfg->uart_num, dump, MIN(to_read, sizeof(dump)), 0))) {
+        to_read -= n;
+    }
+}
+static bool uart_read(dmx_config *cfg, size_t to_read, bool drop_last)
+{
+    if (xSemaphoreTake(cfg->consumer_sem, 0) != pdTRUE) {
+        return false;
+    }
+    size_t len = 0;
+    int n = 0;
+    if (!drop_last) {
+        // Drop first byte
+        to_read -= uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data, 1, 0);
+    }
+    while (to_read && (n = uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data + len, to_read, 0))) {
+        len += n;
+        to_read -= n;
+    }
+    if (drop_last && len > 0) {
+        len--;
+    }
+    cfg->dmx_rx_buf.len = len;
+
+    xTaskNotifyGive(cfg->consumer_task);
+
+    return true;
+}
+
 static void dmx_rx_task(void *arg)
 {
     dmx_config *cfg = (dmx_config*) arg;
@@ -71,41 +104,34 @@ static void dmx_rx_task(void *arg)
     bool is_sync = false;
     bool was_break = false;
     size_t to_read = 0;
+    int64_t last_data_time = 0;
 
     while (1) {
         if (!xQueueReceive(cfg->uart_evt_queue, &evt, portMAX_DELAY))
             continue;
+        
+        int64_t now = esp_timer_get_time();
 
         switch (evt.type) {
 
         case UART_DATA: {
+            last_data_time = now;
             to_read += evt.size;
+            // ESP_LOGI("DEBUG", "DATA ev=%d to_read=%d is_sync=%d, br=%d", evt.size, to_read, is_sync, was_break);
             if (to_read > DMX_BUF_SIZE) {
                 was_break = false;
                 is_sync = false;
                 to_read = 0;
                 uart_flush_input(cfg->uart_num);
-                ESP_LOGI(TAG, "Too long packet");
+                ESP_LOGI(cfg->instance_name, "Too long packet");
             } else if (was_break) {
                 // Read from buffer only after BREAK signal
                 was_break = false;
-                if (is_sync && xSemaphoreTake(cfg->consumer_sem, 0) == pdTRUE) {
-                    size_t len = 0;
-                    int n = 0;
-                    while (to_read && (n = uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data + len, to_read, 0))) {
-                        len += n;
-                        to_read -= n;
-                    }
-                    cfg->dmx_rx_buf.len = len - 1;
-                    xTaskNotifyGive(cfg->consumer_task);
-                } else {
-                    // Just remove bytes from internal buffer
-                    static uint8_t dump[32];
-                    while (to_read) {
-                        to_read -= uart_read_bytes(cfg->uart_num, dump, MIN(to_read, sizeof(dump)), 0);
-                    }
+                if (!(is_sync && uart_read(cfg, to_read, true))) {
+                    uart_dump(cfg, to_read);
                     is_sync = true;
                 }
+                to_read = 0;
             } else {
                 // Keep data in UART internal buffer until BREAK detected
             }
@@ -113,8 +139,20 @@ static void dmx_rx_task(void *arg)
         }
 
         case UART_BREAK: {
-            // Next data frame will be last in this DMX packet
-            was_break = true;
+            int64_t dt = now - last_data_time;
+            // ESP_LOGI("DEBUG", "BREAK dt=%lld to_read=%d is_sync=%d", dt, to_read, is_sync);
+
+            if (dt > 4000) {
+                // BREAK after pause. Assume beginning of the DMX packet
+                if (!(is_sync && to_read && uart_read(cfg, to_read, false))) {
+                    uart_dump(cfg, to_read);
+                    is_sync = true;
+                }
+                to_read = 0;
+            } else {
+                // Next data frame will be last in this DMX packet
+                was_break = true;
+            }
             break;
         }
 
@@ -124,7 +162,7 @@ static void dmx_rx_task(void *arg)
             is_sync = false;
             to_read = 0;
             uart_flush_input(cfg->uart_num);
-            ESP_LOGE(TAG, "UART buffer overflow");
+            ESP_LOGE(cfg->instance_name, "UART buffer overflow");
             break;
 
         default:
@@ -137,8 +175,6 @@ static void dmx_tx_task(void *arg)
 {
     dmx_config *cfg = (dmx_config*) arg;
     TickType_t max_frame_interval = pdMS_TO_TICKS(MAX(0, cfg->repeat_interval * 5 - 1));
-    static uint8_t tx_data[DMX_BUF_SIZE];
-    static size_t tx_data_len;
     while (1) {
         bool should_transmit_now = false;
         BaseType_t notified = ulTaskNotifyTake(pdTRUE, cfg->dmx_data_was_sent ? max_frame_interval : portMAX_DELAY);
@@ -147,8 +183,8 @@ static void dmx_tx_task(void *arg)
             // Notified: new data is ready in dmx_tx_buf
             if (xSemaphoreTake(cfg->tx_sem, portMAX_DELAY) == pdTRUE) {
                 if (cfg->dmx_tx_buf.len <= DMX_BUF_SIZE) {
-                    tx_data_len = cfg->dmx_tx_buf.len;
-                    memcpy(tx_data, cfg->dmx_tx_buf.data, cfg->dmx_tx_buf.len);
+                    cfg->tx_data_len_cache = cfg->dmx_tx_buf.len;
+                    memcpy(cfg->tx_data_cache, cfg->dmx_tx_buf.data, cfg->dmx_tx_buf.len);
                     should_transmit_now = true;
                 }
                 xSemaphoreGive(cfg->tx_sem);
@@ -159,13 +195,20 @@ static void dmx_tx_task(void *arg)
         }
 
         if (should_transmit_now) {
+            #ifdef DMX_BREAK_AFTER_SLOT
+            // The DMX break occurs at the end of the frame
+            uart_write_bytes_with_break(cfg->uart_num, cfg->tx_data_cache, cfg->tx_data_len_cache, DMX_BREAK_BITS);
+            uart_wait_tx_done(cfg->uart_num, portMAX_DELAY);
+            #else
             // The DMX break occurs at the beginning of the frame
             uart_set_line_inverse(cfg->uart_num, UART_SIGNAL_TXD_INV);
-            esp_rom_delay_us(92); // Break
+            esp_rom_delay_us(DMX_BREAK_BITS * 4); // Break
             uart_set_line_inverse(cfg->uart_num, UART_SIGNAL_INV_DISABLE);
             esp_rom_delay_us(8); // Mark After Break
-            uart_write_bytes(cfg->uart_num, tx_data, tx_data_len);
+            uart_write_bytes(cfg->uart_num, cfg->tx_data_cache, cfg->tx_data_len_cache);
             uart_wait_tx_done(cfg->uart_num, portMAX_DELAY);
+            #endif
+
             vTaskDelay(MAX(1, pdMS_TO_TICKS(1))); // Mark Time After Slot, 1ms
         }
     }
@@ -178,7 +221,7 @@ void send_dmx_data_common(dmx_config *cfg, const uint8_t * data, uint16_t length
     }
 
     if (xSemaphoreTake(cfg->tx_sem, 0) != pdTRUE) {
-        // ESP_LOGE(TAG, "tx queue overflow");
+        // ESP_LOGE(cfg->instance_name, "tx queue overflow");
         return;
     }
 
@@ -215,7 +258,7 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, NULL);
         xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, cfg, 5, &cfg->consumer_task);
     } else {
-        ESP_LOGI(TAG, "rx disabled");
+        ESP_LOGI(cfg->instance_name, "rx disabled");
     }
     if ((cfg->enabled & 2) != 0) {
         if (cfg->repeat_interval < 1) {
@@ -223,7 +266,7 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         }
         xTaskCreate(dmx_tx_task, "dmx_tx", 2048, cfg, 5, &cfg->tx_task);
     } else {
-        ESP_LOGI(TAG, "tx disabled");
+        ESP_LOGI(cfg->instance_name, "tx disabled");
     }
     return;
 }

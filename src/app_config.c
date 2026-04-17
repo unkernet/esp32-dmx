@@ -37,6 +37,10 @@ void app_config_get_default(app_config_t *config) {
     config->dmx_in_universe = 1;
     config->dmx_repeat_interval = (550 / 5);
 
+    config->dmx_2_out_universe = 2;
+    config->dmx_2_in_universe = 3;
+    config->dmx_2_repeat_interval = (550 / 5);
+
     config->ambitful_universe = 10;
     config->ambitful_addr = 0;
     config->ambitful_channel = 1;

@@ -18,7 +18,7 @@
 #endif
 #include "app_config.h"
 #include "app_config_nvs.h"
-#include "mdns.h"
+#include "dns.h"
 
 static const char *TAG = "MAIN";
 
