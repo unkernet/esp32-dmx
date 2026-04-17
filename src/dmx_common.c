@@ -33,78 +33,45 @@ static void dmx_consumer_task(void *arg)
 }
 
 /*
- * IMPORTANT NOTE ABOUT UART BREAK HANDLING ON ESP32 (ESP-IDF)
+ * IMPORTANT NOTE ABOUT UART / DMX FRAME HANDLING (PATCHED DRIVER)
  *
- * On ESP32 UART driver, UART_BREAK event does NOT mean that all data
- * belonging to the previous DMX frame has already been delivered
- * via UART_DATA events.
+ * The standard ESP-IDF UART driver does not guarantee that all bytes
+ * belonging to a DMX frame are delivered before the UART_BREAK event.
+ * In practice, the last portion of the frame may be delivered *after*
+ * BREAK, which makes it impossible to reliably use BREAK as a frame
+ * boundary marker.
  *
- * Observed behavior:
- *  - Incoming DMX data is delivered in chunks (~120 bytes).
- *  - When a BREAK occurs on the line, UART_BREAK event is generated
- *    with evt.size == 0.
- *  - At the moment UART_BREAK is received, uart_get_buffered_data_len()
- *    may report 0 bytes.
- *  - The LAST chunk of data (typically ~34 bytes) that was physically
- *    received BEFORE the BREAK is delivered *after* the UART_BREAK 
- *    event as a UART_DATA event.
- *  - Edge case:
- *    If (DMX frame length + 2) is exactly divisible by ~120 bytes,
- *    the final UART_DATA event is NOT generated at all.
- *    In this case, after UART_BREAK, the next UART_DATA contains bytes
- *    belonging to the *next* DMX frame.
+ * To solve this, the UART driver (uart.c) has been patched:
  *
- * Because of this, UART_BREAK must be treated only as a synchronization
- * marker, not as a point where all frame data is already available.
+ *  - UART_BREAK is no longer delivered as a separate event.
+ *  - Instead, BREAK is merged into the RX path.
+ *  - A new event type UART_DATA_BREAK is introduced.
+ *  - When a BREAK interrupt occurs, the driver:
+ *      1. Reads all bytes currently available in the hardware FIFO.
+ *      2. Emits a single event:
+ *            type = UART_DATA_BREAK
+ *            size = number of bytes read from FIFO
  *
- * For this reason:
- *  - UART_DATA bytes are counted (to_read) but NOT read immediately.
- *  - Actual reading from the UART internal buffer happens only after
- *    UART_BREAK is received.
- *  - This guarantees that the full DMX frame is read contiguously,
- *    even though the last portion arrives after the BREAK event.
+ *  - If no data is present, size may be 0. In practice, the hardware
+ *    often provides 1 extra byte (framing error / break symbol).
+ *
+ * Resulting event stream:
+ *
+ *   UART_DATA (size=N)
+ *   UART_DATA (size=M)
+ *   ...
+ *   UART_DATA_BREAK (size=K)   <-- guaranteed frame boundary
+ *
+ * This guarantees that all bytes received *before BREAK* are delivered
+ * before (or together with) the UART_DATA_BREAK event, eliminating the
+ * ambiguity present in the original driver.
  */
-static void uart_dump(dmx_config *cfg, size_t to_read) {
-    // Just remove bytes from internal buffer
-    uint8_t dump[32];
-    int n;
-    while (to_read && (n = uart_read_bytes(cfg->uart_num, dump, MIN(to_read, sizeof(dump)), 0))) {
-        to_read -= n;
-    }
-}
-static bool uart_read(dmx_config *cfg, size_t to_read, bool drop_last)
-{
-    if (xSemaphoreTake(cfg->consumer_sem, 0) != pdTRUE) {
-        return false;
-    }
-    size_t len = 0;
-    int n = 0;
-    if (!drop_last) {
-        // Drop first byte
-        to_read -= uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data, 1, 0);
-    }
-    while (to_read && (n = uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data + len, to_read, 0))) {
-        len += n;
-        to_read -= n;
-    }
-    if (drop_last && len > 0) {
-        len--;
-    }
-    cfg->dmx_rx_buf.len = len;
-
-    xTaskNotifyGive(cfg->consumer_task);
-
-    return true;
-}
-
 static void dmx_rx_task(void *arg)
 {
     dmx_config *cfg = (dmx_config*) arg;
     uart_event_t evt;
     bool is_sync = false;
-    bool was_break = false;
     size_t to_read = 0;
-    int64_t last_data_time = 0;
 
     while (1) {
         if (!xQueueReceive(cfg->uart_evt_queue, &evt, portMAX_DELAY))
@@ -114,51 +81,43 @@ static void dmx_rx_task(void *arg)
 
         switch (evt.type) {
 
-        case UART_DATA: {
-            last_data_time = now;
+        case UART_DATA:
+        case UART_DATA_BREAK: {
             to_read += evt.size;
-            // ESP_LOGI("DEBUG", "DATA ev=%d to_read=%d is_sync=%d, br=%d", evt.size, to_read, is_sync, was_break);
+            // ESP_LOGI("DEBUG", "DATA ev=%d to_read=%d is_sync=%d, br=%d", evt.size, to_read, is_sync, evt.type == UART_DATA_BREAK);
             if (to_read > DMX_BUF_SIZE) {
-                was_break = false;
                 is_sync = false;
                 to_read = 0;
                 uart_flush_input(cfg->uart_num);
                 ESP_LOGI(cfg->instance_name, "Too long packet");
-            } else if (was_break) {
+            } else if (evt.type == UART_DATA_BREAK) {
                 // Read from buffer only after BREAK signal
-                was_break = false;
-                if (!(is_sync && uart_read(cfg, to_read, true))) {
-                    uart_dump(cfg, to_read);
+                if (is_sync && xSemaphoreTake(cfg->consumer_sem, 0) == pdTRUE) {
+                    size_t len = 0;
+                    int n = 0;
+                    while (to_read && (n = uart_read_bytes(cfg->uart_num, cfg->dmx_rx_buf.data + len, to_read, 0))) {
+                        len += n;
+                        to_read -= n;
+                    }
+                    cfg->dmx_rx_buf.len = len - 1;
+                    xTaskNotifyGive(cfg->consumer_task);
+                } else {
+                    // Just remove bytes from internal buffer
+                    uint8_t dump[32];
+                    int n = 0;
+                    while (to_read && (n = uart_read_bytes(cfg->uart_num, dump, MIN(to_read, sizeof(dump)), 0))) {
+                        to_read -= n;
+                    }
                     is_sync = true;
                 }
-                to_read = 0;
             } else {
                 // Keep data in UART internal buffer until BREAK detected
             }
             break;
         }
 
-        case UART_BREAK: {
-            int64_t dt = now - last_data_time;
-            // ESP_LOGI("DEBUG", "BREAK dt=%lld to_read=%d is_sync=%d", dt, to_read, is_sync);
-
-            if (dt > 4000) {
-                // BREAK after pause. Assume beginning of the DMX packet
-                if (!(is_sync && to_read && uart_read(cfg, to_read, false))) {
-                    uart_dump(cfg, to_read);
-                    is_sync = true;
-                }
-                to_read = 0;
-            } else {
-                // Next data frame will be last in this DMX packet
-                was_break = true;
-            }
-            break;
-        }
-
         case UART_FIFO_OVF:
         case UART_BUFFER_FULL:
-            was_break = false;
             is_sync = false;
             to_read = 0;
             uart_flush_input(cfg->uart_num);
@@ -245,7 +204,7 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, 0);
+    uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
     uart_param_config(cfg->uart_num, &uart_cfg);
     uart_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
 
