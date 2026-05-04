@@ -300,8 +300,12 @@ static void reconnect_task(void *arg)
 /* ---------- init ---------- */
 
 esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
-    uint16_t number = 20;
-    wifi_ap_record_t ap_info[20];
+    uint16_t number = 32;
+    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * number);
+    if (ap_info == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
     uint16_t ap_count = 0;
 
     wifi_scan_config_t scan_config = {
@@ -315,6 +319,7 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start scan: %s", esp_err_to_name(err));
+        free(ap_info);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan failed");
         return ESP_FAIL;
     }
@@ -334,6 +339,7 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     httpd_resp_send_chunk(req, "]", 1);
     httpd_resp_send_chunk(req, NULL, 0);
 
+    free(ap_info);
     return ESP_OK;
 }
 

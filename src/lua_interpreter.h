@@ -41,4 +41,6 @@ bool lua_interpreter_is_running(void);
  */
 esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req);
 
+void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length);
+
 #endif // LUA_INTERPRETER_H

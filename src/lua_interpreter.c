@@ -12,33 +12,88 @@
 #include <string.h>
 #include <sys/stat.h>
 
-static const char *TAG = "LUA_INT";
+static const char *TAG = "LUA";
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool should_stop = false;
 static char current_script[64] = "";
 static char last_error[64] = "";
+static SemaphoreHandle_t dmx_data_sem = NULL;
+static SemaphoreHandle_t data_ready_sem = NULL;
+static uint8_t dmx_buffer[512];
+static uint16_t dmx_buffer_len = 0;
+static uint16_t listen_universe = -1;
+static uint16_t buffered_universe = -1;
 
-static int l_send_dmx(lua_State *L) {
+static int l_dmx_send(lua_State *L) {
     int universe = luaL_checkinteger(L, 1);
-    luaL_checktype(L, 2, LUA_TTABLE);
     
-    size_t len = lua_rawlen(L, 2);
-    if (len > 512) len = 512;
-    
-    uint8_t data[512];
-    for (int i = 1; i <= len; i++) {
-        lua_rawgeti(L, 2, i);
-        data[i-1] = (uint8_t)lua_tointeger(L, -1);
-        lua_pop(L, 1);
+    int type = lua_type(L, 2);
+    if (type == LUA_TTABLE) {
+        uint8_t data[512];
+        size_t len = lua_rawlen(L, 2);
+        if (len > 512) len = 512;
+        for (size_t i = 0; i < len; i++) {
+            lua_rawgeti(L, 2, i + 1);
+            data[i] = (uint8_t)lua_tointeger(L, -1);
+            lua_pop(L, 1);
+        }
+        route_dmx_data(DATA_SOURCE_LUA, universe, data, len);
+    } else if (type == LUA_TSTRING) {
+        size_t str_len;
+        const char *str = lua_tolstring(L, 2, &str_len);
+        size_t len = (str_len > 512) ? 512 : str_len;
+        route_dmx_data(DATA_SOURCE_LUA, universe, (const uint8_t *)str, len);
+    } else {
+        return luaL_error(L, "DMX data must be a table or string");
     }
     
-    route_dmx_data(DATA_SOURCE_LUA, universe, data, len);
     return 0;
+}
+
+static void lua_kill_hook(lua_State *L, lua_Debug *ar) {
+    if (should_stop) {
+        luaL_error(L, "Script killed");
+    }
+}
+
+void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
+    if (universe == listen_universe) {
+        if (xSemaphoreTake(dmx_data_sem, 0) == pdTRUE) {
+            dmx_buffer_len = (length > 512) ? 512 : length;
+            memcpy(dmx_buffer, data, dmx_buffer_len);
+            buffered_universe = universe;
+            xSemaphoreGive(dmx_data_sem);
+            xSemaphoreGive(data_ready_sem);
+        }
+    }
+}
+
+static int l_dmx_read(lua_State *L) {
+    int universe = luaL_checkinteger(L, 1);
+    int timeout = luaL_checkinteger(L, 2);
+
+    listen_universe = universe;
+
+    if (xSemaphoreTake(data_ready_sem, pdMS_TO_TICKS(timeout)) == pdTRUE) {
+        lua_kill_hook(L, NULL);
+        if (xSemaphoreTake(dmx_data_sem, portMAX_DELAY) == pdTRUE) {
+            if (buffered_universe == (uint16_t)universe) {
+                lua_pushlstring(L, (const char *)dmx_buffer, dmx_buffer_len);
+                xSemaphoreGive(dmx_data_sem);
+                return 1;
+            }
+            xSemaphoreGive(dmx_data_sem);
+        }
+    }
+
+    lua_pushnil(L);
+    return 1;
 }
 
 static int l_sleep(lua_State *L) {
     int ms = luaL_checkinteger(L, 1);
     vTaskDelay(pdMS_TO_TICKS(ms));
+    lua_kill_hook(L, NULL);
     return 0;
 }
 
@@ -47,19 +102,14 @@ static int l_random(lua_State *L) {
     return 1;
 }
 
-static void lua_hook(lua_State *L, lua_Debug *ar) {
-    if (should_stop) {
-        luaL_error(L, "Script killed");
-    }
-}
-
 static void lua_task(void *pvParameters) {
-    char *filename = (char *)pvParameters;
+    char full_path[80];
+    snprintf(full_path, sizeof(full_path), "/spiffs/%s", current_script);
+
     lua_State *L = luaL_newstate();
     if (L == NULL) {
         ESP_LOGE(TAG, "Failed to create Lua state");
         strncpy(last_error, "Failed to create Lua state", sizeof(last_error) - 1);
-        free(filename);
         lua_task_handle = NULL;
         current_script[0] = '\0';
         vTaskDelete(NULL);
@@ -69,15 +119,16 @@ static void lua_task(void *pvParameters) {
     luaL_openlibs(L);
     
     // Register custom functions
-    lua_register(L, "send_dmx", l_send_dmx);
+    lua_register(L, "dmx_send", l_dmx_send);
+    lua_register(L, "dmx_read", l_dmx_read);
     lua_register(L, "random", l_random);
     lua_register(L, "sleep", l_sleep);
 
     // Set hook to allow killing the script
-    lua_sethook(L, lua_hook, LUA_MASKCOUNT, 100);
+    lua_sethook(L, lua_kill_hook, LUA_MASKCOUNT, 100);
 
-    ESP_LOGI(TAG, "Running script: %s", filename);
-    if (luaL_dofile(L, filename) != LUA_OK) {
+    ESP_LOGI(TAG, "Running script: %s", current_script);
+    if (luaL_dofile(L, full_path) != LUA_OK) {
         const char *error = lua_tostring(L, -1);
         ESP_LOGE(TAG, "Lua error: %s", error);
         strncpy(last_error, error, sizeof(last_error) - 1);
@@ -88,14 +139,18 @@ static void lua_task(void *pvParameters) {
     }
 
     lua_close(L);
-    free(filename);
     lua_task_handle = NULL;
     current_script[0] = '\0';
+    listen_universe = -1;
     ESP_LOGI(TAG, "Lua task finished");
     vTaskDelete(NULL);
 }
 
 esp_err_t lua_interpreter_init(void) {
+    data_ready_sem = xSemaphoreCreateBinary();
+    dmx_data_sem = xSemaphoreCreateBinary();
+    xSemaphoreGive(dmx_data_sem);
+
     struct stat st;
     if (stat("/spiffs/init.lua", &st) == 0) {
         ESP_LOGI(TAG, "Found init.lua, starting...");
@@ -112,21 +167,11 @@ esp_err_t lua_interpreter_run(const char *filename) {
 
     should_stop = false;
     last_error[0] = '\0';
-    char full_path[128];
-    if (filename[0] != '/') {
-        snprintf(full_path, sizeof(full_path), "/spiffs/%s", filename);
-    } else {
-        strncpy(full_path, filename, sizeof(full_path));
-    }
+    strncpy(current_script, filename, sizeof(current_script) - 1);
+    listen_universe = -1;
 
-    // Store simple name for status
-    const char *last_slash = strrchr(filename, '/');
-    strncpy(current_script, last_slash ? last_slash + 1 : filename, sizeof(current_script) - 1);
-
-    char *fn_copy = strdup(full_path);
-    xTaskCreate(lua_task, "lua_task", 8192, fn_copy, 5, &lua_task_handle);
+    xTaskCreate(lua_task, "lua_task", 8192, NULL, 5, &lua_task_handle);
     if (lua_task_handle == NULL) {
-        free(fn_copy);
         current_script[0] = '\0';
         return ESP_FAIL;
     }
@@ -138,6 +183,10 @@ esp_err_t lua_interpreter_kill(void) {
         return ESP_OK;
     }
     should_stop = true;
+    
+    // Abort any pending delay (sleep) immediately
+    xTaskAbortDelay(lua_task_handle);
+    xSemaphoreGive(data_ready_sem);
     
     // Wait a bit for it to stop gracefully
     int timeout = 100; // 1 second
