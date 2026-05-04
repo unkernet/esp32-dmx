@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "rollup -c rollup.config.js && gzip -f ../data/index.js && npx html-minifier-terser --collapse-whitespace --remove-comments --output /tmp/index.min.html index.html && gzip -f -c /tmp/index.min.html > ../data/index.html.gz && rm /tmp/index.min.html",
+    "build": "rollup -c rollup.config.js && brotli -jf ../data/index.js && npx html-minifier-terser --collapse-whitespace --remove-comments index.html | brotli -c > ../data/index.html.br",
     "upload": "cd ..; pio run -t uploadfs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

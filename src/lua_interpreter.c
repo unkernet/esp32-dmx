@@ -15,6 +15,8 @@
 static const char *TAG = "LUA_INT";
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool should_stop = false;
+static char current_script[64] = "";
+static char last_error[64] = "";
 
 static int l_send_dmx(lua_State *L) {
     int universe = luaL_checkinteger(L, 1);
@@ -56,8 +58,10 @@ static void lua_task(void *pvParameters) {
     lua_State *L = luaL_newstate();
     if (L == NULL) {
         ESP_LOGE(TAG, "Failed to create Lua state");
+        strncpy(last_error, "Failed to create Lua state", sizeof(last_error) - 1);
         free(filename);
         lua_task_handle = NULL;
+        current_script[0] = '\0';
         vTaskDelete(NULL);
         return;
     }
@@ -76,27 +80,38 @@ static void lua_task(void *pvParameters) {
     if (luaL_dofile(L, filename) != LUA_OK) {
         const char *error = lua_tostring(L, -1);
         ESP_LOGE(TAG, "Lua error: %s", error);
+        strncpy(last_error, error, sizeof(last_error) - 1);
+        last_error[sizeof(last_error) - 1] = '\0';
     } else {
         ESP_LOGI(TAG, "Script finished successfully");
+        last_error[0] = '\0';
     }
 
     lua_close(L);
     free(filename);
     lua_task_handle = NULL;
+    current_script[0] = '\0';
     ESP_LOGI(TAG, "Lua task finished");
     vTaskDelete(NULL);
 }
 
 esp_err_t lua_interpreter_init(void) {
+    struct stat st;
+    if (stat("/spiffs/init.lua", &st) == 0) {
+        ESP_LOGI(TAG, "Found init.lua, starting...");
+        return lua_interpreter_run("init.lua");
+    }
     return ESP_OK;
 }
 
 esp_err_t lua_interpreter_run(const char *filename) {
     if (lua_task_handle != NULL) {
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGI(TAG, "Killing currently running script to start %s", filename);
+        lua_interpreter_kill();
     }
 
     should_stop = false;
+    last_error[0] = '\0';
     char full_path[128];
     if (filename[0] != '/') {
         snprintf(full_path, sizeof(full_path), "/spiffs/%s", filename);
@@ -104,10 +119,15 @@ esp_err_t lua_interpreter_run(const char *filename) {
         strncpy(full_path, filename, sizeof(full_path));
     }
 
+    // Store simple name for status
+    const char *last_slash = strrchr(filename, '/');
+    strncpy(current_script, last_slash ? last_slash + 1 : filename, sizeof(current_script) - 1);
+
     char *fn_copy = strdup(full_path);
     xTaskCreate(lua_task, "lua_task", 8192, fn_copy, 5, &lua_task_handle);
     if (lua_task_handle == NULL) {
         free(fn_copy);
+        current_script[0] = '\0';
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -129,6 +149,7 @@ esp_err_t lua_interpreter_kill(void) {
         ESP_LOGW(TAG, "Forcibly deleting Lua task");
         vTaskDelete(lua_task_handle);
         lua_task_handle = NULL;
+        current_script[0] = '\0';
     }
     return ESP_OK;
 }
@@ -137,35 +158,42 @@ bool lua_interpreter_is_running(void) {
     return lua_task_handle != NULL;
 }
 
-char* lua_interpreter_list_scripts(void) {
+esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
     DIR *dir = opendir("/spiffs");
     if (dir == NULL) {
-        return strdup("[]");
+        httpd_resp_sendstr(req, "{\"scripts\":[],\"running\":null,\"error\":null}");
+        return ESP_OK;
     }
 
-    size_t buf_size = 1024;
-    char *json = malloc(buf_size);
-    strcpy(json, "[");
-    bool first = true;
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send_chunk(req, "{\"scripts\":[", HTTPD_RESP_USE_STRLEN);
 
     struct dirent *ent;
+    bool first = true;
     while ((ent = readdir(dir)) != NULL) {
         if (strstr(ent->d_name, ".lua")) {
-            if (!first) strcat(json, ",");
-            
-            // Check if we need more space
-            if (strlen(json) + strlen(ent->d_name) + 5 > buf_size) {
-                buf_size *= 2;
-                json = realloc(json, buf_size);
-            }
-
-            strcat(json, "\"");
-            strcat(json, ent->d_name);
-            strcat(json, "\"");
+            char buf[128];
+            int len = snprintf(buf, sizeof(buf), "%s\"%s\"", first ? "" : ",", ent->d_name);
+            httpd_resp_send_chunk(req, buf, len);
             first = false;
         }
     }
-    strcat(json, "]");
     closedir(dir);
-    return json;
+
+    char status_buf[192];
+    int status_len;
+    
+    const char *running = lua_interpreter_is_running() ? current_script : NULL;
+    const char *error = (last_error[0] != '\0') ? last_error : NULL;
+
+    status_len = snprintf(status_buf, sizeof(status_buf), 
+        "],\"running\":%s%s%s,\"error\":%s%s%s}",
+        running ? "\"" : "", running ? running : "null", running ? "\"" : "",
+        error ? "\"" : "", error ? error : "null", error ? "\"" : "");
+
+    httpd_resp_send_chunk(req, status_buf, status_len);
+
+    // Finish chunked response
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
 }

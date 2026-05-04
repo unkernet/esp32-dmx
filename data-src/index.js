@@ -272,10 +272,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.fetchLuaScripts = async function() {
         try {
             const response = await fetch('/lua/list');
-            const files = await response.json();
+            const data = await response.json();
             const list = $('luaFiles');
             list.innerHTML = '';
-            files.forEach(file => {
+            data.scripts.forEach(file => {
                 const li = document.createElement('li');
                 li.style.display = 'flex';
                 li.style.justifyContent = 'space-between';
@@ -283,15 +283,45 @@ document.addEventListener('DOMContentLoaded', async function() {
                 li.style.background = '#eee';
                 li.style.padding = '5px';
                 li.style.borderRadius = '4px';
-                li.textContent = file;
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = file;
+                nameSpan.style.cursor = 'pointer';
+                nameSpan.onclick = () => window.viewLuaScript(file);
+                li.appendChild(nameSpan);
+
+                const btns = document.createElement('div');
+
                 const runBtn = document.createElement('button');
                 runBtn.textContent = 'Run';
                 runBtn.type = 'button';
                 runBtn.style.marginLeft = '10px';
                 runBtn.onclick = () => window.runLuaScript(file);
-                li.appendChild(runBtn);
+                btns.appendChild(runBtn);
+
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.type = 'button';
+                delBtn.style.marginLeft = '5px';
+                delBtn.style.color = 'red';
+                delBtn.onclick = () => window.deleteLuaScript(file);
+                btns.appendChild(delBtn);
+
+                li.appendChild(btns);
                 list.appendChild(li);
             });
+
+            const statusEl = $('luaStatus');
+            if (data.running) {
+                statusEl.textContent = 'Status: Running ' + data.running;
+                statusEl.style.color = 'green';
+            } else if (data.error) {
+                statusEl.textContent = 'Status: Error - ' + data.error;
+                statusEl.style.color = 'red';
+            } else {
+                statusEl.textContent = 'Status: Idle';
+                statusEl.style.color = 'inherit';
+            }
         } catch (error) {
             console.error('Error fetching Lua scripts:', error);
         }
@@ -305,11 +335,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         const file = fileInput.files[0];
         try {
-            const response = await fetch('/lua/upload', {
-                method: 'POST',
-                headers: {
-                    'X-Filename': file.name
-                },
+            const response = await fetch('/lua/scripts/' + file.name, {
+                method: 'PUT',
                 body: file
             });
             if (response.ok) {
@@ -320,6 +347,34 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         } catch (error) {
             console.error('Error uploading Lua script:', error);
+        }
+    };
+
+    window.deleteLuaScript = async function(filename) {
+        if (!confirm('Delete ' + filename + '?')) return;
+        try {
+            const response = await fetch('/lua/scripts/' + filename, {
+                method: 'PUT',
+                body: '' // Empty body triggers deletion
+            });
+            if (response.ok) {
+                window.fetchLuaScripts();
+            }
+        } catch (error) {
+            console.error('Error deleting Lua script:', error);
+        }
+    };
+
+    window.viewLuaScript = async function(filename) {
+        try {
+            const response = await fetch('/lua/scripts/' + filename);
+            if (response.ok) {
+                const content = await response.text();
+                console.log('Script content of ' + filename + ':', content);
+                alert('Script: ' + filename + '\n\n' + content);
+            }
+        } catch (error) {
+            console.error('Error fetching script content:', error);
         }
     };
 

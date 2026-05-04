@@ -1,5 +1,6 @@
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -12,6 +13,7 @@
 #include "app_config_nvs.h"
 #include "router.h"
 #include "lua_interpreter.h"
+#include "wifi_manager.h"
 
 #define MAX_WS_CLIENTS 5
 
@@ -60,8 +62,8 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 
 static esp_err_t serve_static_file(httpd_req_t *req)
 {
-    char base_filepath[128]; // Path without /spiffs and without .gz
-    char full_filepath_gz[128]; // Full path including /spiffs and .gz
+    char base_filepath[128]; // Path without /spiffs and without .br
+    char full_filepath_br[128]; // Full path including /spiffs and .br
     const char *uri = req->uri;
 
     // Determine the base file path (e.g., /index.html or /index.js)
@@ -72,38 +74,46 @@ static esp_err_t serve_static_file(httpd_req_t *req)
         base_filepath[sizeof(base_filepath) - 1] = '\0';
     }
 
-    // Construct the full gzipped file path in SPIFFS
-    snprintf(full_filepath_gz, sizeof(full_filepath_gz), "/spiffs%s.gz", base_filepath);
+    // Construct the full Brotli file path in SPIFFS
+    snprintf(full_filepath_br, sizeof(full_filepath_br), "/spiffs%s.br", base_filepath);
 
     struct stat st;
-    if (get_file_info(full_filepath_gz, &st) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to find gzipped file: %s", full_filepath_gz);
+    if (get_file_info(full_filepath_br, &st) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to find file: %s", full_filepath_br);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
-    FILE* f = fopen(full_filepath_gz, "r");
+    FILE* f = fopen(full_filepath_br, "r");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open gzipped file %s", full_filepath_gz);
+        ESP_LOGE(TAG, "Failed to open file %s", full_filepath_br);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
-    char*  buf = (char*)malloc(st.st_size);
-    if (buf == NULL) {
+    set_content_type_from_file(req, base_filepath); // Set content type based on original file extension
+    httpd_resp_set_hdr(req, "Content-Encoding", "br");
+
+    char *chunk = malloc(1024);
+    if (chunk == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for file buffer");
         fclose(f);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
     }
 
-    fread(buf, 1, st.st_size, f);
+    size_t read_bytes;
+    while ((read_bytes = fread(chunk, 1, 1024, f)) > 0) {
+        if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
+            fclose(f);
+            free(chunk);
+            return ESP_FAIL;
+        }
+    }
     fclose(f);
+    free(chunk);
 
-    set_content_type_from_file(req, base_filepath); // Set content type based on original file extension
-    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-    httpd_resp_send(req, buf, st.st_size);
-    free(buf);
+    httpd_resp_send_chunk(req, NULL, 0); // Send empty chunk to signal end of stream
     return ESP_OK;
 }
 
@@ -235,11 +245,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
 }
 
 static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
-    char *json = lua_interpreter_list_scripts();
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, json);
-    free(json);
-    return ESP_OK;
+    return lua_interpreter_stream_scripts(req);
 }
 
 static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
@@ -270,28 +276,73 @@ static esp_err_t http_post_lua_kill_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static esp_err_t http_post_lua_upload_handler(httpd_req_t *req) {
-    char filename[64] = {0};
-    if (httpd_req_get_hdr_value_str(req, "X-Filename", filename, sizeof(filename)) != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-Filename header");
+static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
+    const char *filename = req->uri + strlen("/lua/scripts/");
+    if (strlen(filename) == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename missing");
         return ESP_FAIL;
     }
 
     char filepath[128];
     snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
 
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    FILE *f = fopen(filepath, "r");
+    if (f == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "text/plain");
+    char *buf = malloc(1024);
+    if (!buf) {
+        fclose(f);
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t read_bytes;
+    while ((read_bytes = fread(buf, 1, 1024, f)) > 0) {
+        httpd_resp_send_chunk(req, buf, read_bytes);
+    }
+    fclose(f);
+    free(buf);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
+    const char *filename = req->uri + strlen("/lua/scripts/");
+    if (strlen(filename) == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename missing");
+        return ESP_FAIL;
+    }
+
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
+
+    if (req->content_len == 0) {
+        ESP_LOGI(TAG, "Deleting file: %s", filepath);
+        unlink(filepath);
+        httpd_resp_sendstr(req, "File deleted");
+        return ESP_OK;
+    }
+
     FILE *f = fopen(filepath, "w");
     if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open file %s for writing", filepath);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
         return ESP_FAIL;
     }
 
     char *buf = malloc(1024);
     if (!buf) {
         fclose(f);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
+        return ESP_ERR_NO_MEM;
     }
 
     int received;
@@ -303,9 +354,20 @@ static esp_err_t http_post_lua_upload_handler(httpd_req_t *req) {
     fclose(f);
     free(buf);
 
-    httpd_resp_sendstr(req, "File uploaded successfully");
+    httpd_resp_sendstr(req, "File uploaded");
     return ESP_OK;
 }
+
+static esp_err_t http_get_wifi_scan_handler(httpd_req_t *req) {
+    return wifi_manager_scan_wifi(req);
+}
+
+static const httpd_uri_t get_wifi_scan_uri = {
+    .uri      = "/wifi/scan",
+    .method   = HTTP_GET,
+    .handler  = http_get_wifi_scan_handler,
+    .user_ctx = NULL
+};
 
 static const httpd_uri_t get_lua_list_uri = {
     .uri      = "/lua/list",
@@ -328,10 +390,17 @@ static const httpd_uri_t post_lua_kill_uri = {
     .user_ctx = NULL
 };
 
-static const httpd_uri_t post_lua_upload_uri = {
-    .uri      = "/lua/upload",
-    .method   = HTTP_POST,
-    .handler  = http_post_lua_upload_handler,
+static const httpd_uri_t get_lua_script_uri = {
+    .uri      = "/lua/scripts/*",
+    .method   = HTTP_GET,
+    .handler  = http_get_lua_script_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t put_lua_script_uri = {
+    .uri      = "/lua/scripts/*",
+    .method   = HTTP_PUT,
+    .handler  = http_put_lua_script_handler,
     .user_ctx = NULL
 };
 
@@ -389,14 +458,16 @@ httpd_handle_t start_webserver(app_config_t *config)
 
     if (httpd_start(&server, &httpd_cfg) == ESP_OK) {
         httpd_register_uri_handler(server, &get_root_uri);
-        httpd_register_uri_handler(server, &get_js_uri); // Register handler for index.js
+        httpd_register_uri_handler(server, &get_js_uri);
         httpd_register_uri_handler(server, &get_config_uri);
         httpd_register_uri_handler(server, &put_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
         httpd_register_uri_handler(server, &get_lua_list_uri);
         httpd_register_uri_handler(server, &post_lua_run_uri);
         httpd_register_uri_handler(server, &post_lua_kill_uri);
-        httpd_register_uri_handler(server, &post_lua_upload_uri);
+        httpd_register_uri_handler(server, &get_lua_script_uri);
+        httpd_register_uri_handler(server, &put_lua_script_uri);
+        httpd_register_uri_handler(server, &get_wifi_scan_uri);
     }
     return server;
 }

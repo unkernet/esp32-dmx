@@ -31,11 +31,14 @@ esp_err_t lua_interpreter_kill(void);
  */
 bool lua_interpreter_is_running(void);
 
+#include "esp_http_server.h"
+
 /**
- * @brief List all Lua scripts in the /spiffs directory.
+ * @brief Stream the list of Lua scripts and status as JSON to the HTTP response.
  * 
- * @return A JSON string representing the list of scripts. Caller must free().
+ * @param req The HTTP request handle to stream to.
+ * @return ESP_OK on success.
  */
-char* lua_interpreter_list_scripts(void);
+esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req);
 
 #endif // LUA_INTERPRETER_H
