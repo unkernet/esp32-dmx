@@ -62,8 +62,8 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 
 static esp_err_t serve_static_file(httpd_req_t *req)
 {
-    char base_filepath[128]; // Path without /spiffs and without .br
-    char full_filepath_br[128]; // Full path including /spiffs and .br
+    char base_filepath[128]; // Path without /spiffs and without .gz
+    char full_filepath_gz[128]; // Full path including /spiffs and .gz
     const char *uri = req->uri;
 
     // Determine the base file path (e.g., /index.html or /index.js)
@@ -74,25 +74,25 @@ static esp_err_t serve_static_file(httpd_req_t *req)
         base_filepath[sizeof(base_filepath) - 1] = '\0';
     }
 
-    // Construct the full Brotli file path in SPIFFS
-    snprintf(full_filepath_br, sizeof(full_filepath_br), "/spiffs%s.br", base_filepath);
+    // Construct the full file path in SPIFFS
+    snprintf(full_filepath_gz, sizeof(full_filepath_gz), "/spiffs%s.gz", base_filepath);
 
     struct stat st;
-    if (get_file_info(full_filepath_br, &st) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to find file: %s", full_filepath_br);
+    if (get_file_info(full_filepath_gz, &st) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to find file: %s", full_filepath_gz);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
-    FILE* f = fopen(full_filepath_br, "r");
+    FILE* f = fopen(full_filepath_gz, "r");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file %s", full_filepath_br);
+        ESP_LOGE(TAG, "Failed to open file %s", full_filepath_gz);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
     set_content_type_from_file(req, base_filepath); // Set content type based on original file extension
-    httpd_resp_set_hdr(req, "Content-Encoding", "br");
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
 
     char *chunk = malloc(1024);
     if (chunk == NULL) {
@@ -177,6 +177,7 @@ static void remove_ws_client(int fd)
     for (i = 0; i < ws_clients_count; i++) {
         if (ws_clients[i].fd == fd) {
             ESP_LOGI(TAG, "Client disconnected: %d", fd);
+            close(fd);
             for (int j = i; j < ws_clients_count - 1; j++) {
                 ws_clients[j] = ws_clients[j + 1];
             }
@@ -358,17 +359,6 @@ static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-static esp_err_t http_get_wifi_scan_handler(httpd_req_t *req) {
-    return wifi_manager_scan_wifi(req);
-}
-
-static const httpd_uri_t get_wifi_scan_uri = {
-    .uri      = "/wifi/scan",
-    .method   = HTTP_GET,
-    .handler  = http_get_wifi_scan_handler,
-    .user_ctx = NULL
-};
-
 static const httpd_uri_t get_lua_list_uri = {
     .uri      = "/lua/list",
     .method   = HTTP_GET,
@@ -467,7 +457,6 @@ httpd_handle_t start_webserver(app_config_t *config)
         httpd_register_uri_handler(server, &post_lua_kill_uri);
         httpd_register_uri_handler(server, &get_lua_script_uri);
         httpd_register_uri_handler(server, &put_lua_script_uri);
-        httpd_register_uri_handler(server, &get_wifi_scan_uri);
     }
     return server;
 }

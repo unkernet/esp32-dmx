@@ -299,50 +299,6 @@ static void reconnect_task(void *arg)
 
 /* ---------- init ---------- */
 
-esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
-    uint16_t number = 32;
-    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * number);
-    if (ap_info == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
-        return ESP_FAIL;
-    }
-    uint16_t ap_count = 0;
-
-    wifi_scan_config_t scan_config = {
-        .ssid = 0,
-        .bssid = 0,
-        .channel = 0,
-        .show_hidden = false
-    };
-
-    ESP_LOGI(TAG, "Starting WiFi scan...");
-    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start scan: %s", esp_err_to_name(err));
-        free(ap_info);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan failed");
-        return ESP_FAIL;
-    }
-
-    esp_wifi_scan_get_ap_records(&number, ap_info);
-    esp_wifi_scan_get_ap_num(&ap_count);
-    ESP_LOGI(TAG, "Scan done, found %d networks", ap_count);
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send_chunk(req, "[", 1);
-    for (int i = 0; i < ap_count; i++) {
-        char buf[128];
-        int len = snprintf(buf, sizeof(buf), "%s{\"ssid\":\"%s\",\"rssi\":%d,\"auth\":%d}",
-                           i == 0 ? "" : ",", (char *)ap_info[i].ssid, ap_info[i].rssi, ap_info[i].authmode);
-        httpd_resp_send_chunk(req, buf, len);
-    }
-    httpd_resp_send_chunk(req, "]", 1);
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    free(ap_info);
-    return ESP_OK;
-}
-
 void wifi_manager_init(app_config_t *config)
 {
     cfg = config;

@@ -1,17 +1,16 @@
-local data = {}
 local leds = 50
-local r = 0
-local a = 1
+local pos = 0
 
 while 1 do
-  for i = 0, leds - 1 do
-    data[i*3+1] = r
-    data[i*3+2] = 0
-    data[i*3+3] = 255-r
+  local data = string.rep('\x00', pos * 3) .. string.rep('\x0f', 3) .. string.rep('\x00', (leds - pos - 1) * 3)
+  dmx_send(20, data)
+
+  local read = dmx_read(19, 200)
+  if read and #read > 0 then
+    local p = string.byte(read, 1, 1)
+    pos = p
+  else
+    pos = pos + 1
   end
-  r=r+a
-  if r == 255 then a = -1 end
-  if r == 0 then a = 1 end
-  send_dmx(20, data)
-  sleep(30)
+  if pos >= leds then pos = 0 end
 end
