@@ -13,6 +13,7 @@
 #include "app_config.h"
 #include "app_config_nvs.h"
 #include "router.h"
+#include "wifi_manager.h"
 #ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
 #endif
@@ -271,6 +272,17 @@ static const httpd_uri_t ws_uri = {
     .is_websocket = true
 };
 
+static esp_err_t http_get_wifi_scan_handler(httpd_req_t *req) {
+    return wifi_manager_scan_wifi(req);
+}
+
+static const httpd_uri_t get_wifi_scan_uri = {
+    .uri      = "/wifi/scan",
+    .method   = HTTP_GET,
+    .handler  = http_get_wifi_scan_handler,
+    .user_ctx = NULL
+};
+
 #ifdef LUA_INTERPRETER
 static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
     return lua_interpreter_stream_scripts(req);
@@ -444,6 +456,7 @@ httpd_handle_t start_webserver(app_config_t *config)
         httpd_register_uri_handler(server, &get_config_uri);
         httpd_register_uri_handler(server, &put_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
+        httpd_register_uri_handler(server, &get_wifi_scan_uri);
         #ifdef LUA_INTERPRETER
         httpd_register_uri_handler(server, &get_lua_list_uri);
         httpd_register_uri_handler(server, &post_lua_run_uri);

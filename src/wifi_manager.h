@@ -9,4 +9,6 @@
 // Function to initialize WiFi manager and set up STA or AP based on config
 void wifi_manager_init(app_config_t *config);
 
+esp_err_t wifi_manager_scan_wifi(httpd_req_t *req);
+
 #endif // WIFI_MANAGER_H
