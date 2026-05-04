@@ -139,6 +139,15 @@
             <input type="number" id="ws2812_universe" name="ws2812_universe" min="0" max="65535" value="0"><br>
         </div>
 
+        <div class="section">
+            <h2>Lua Scripts</h2>
+            <div id="luaStatus">Status: Idle</div>
+            <ul id="luaFiles"></ul>
+            <input type="file" id="luaUploadFile" accept=".lua">
+            <button type="button" onclick="uploadLuaScript()">Upload Script</button>
+            <button type="button" onclick="killLuaScript()">Kill Running Script</button>
+        </div>
+
         <input type="submit" value="Save Configuration">
     </form>
 

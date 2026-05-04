@@ -11,6 +11,7 @@
 #include "app_config.h"
 #include "app_config_nvs.h"
 #include "router.h"
+#include "lua_interpreter.h"
 
 #define MAX_WS_CLIENTS 5
 
@@ -233,6 +234,107 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
+    char *json = lua_interpreter_list_scripts();
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    free(json);
+    return ESP_OK;
+}
+
+static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
+    char buf[128];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timed out");
+        }
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    esp_err_t err = lua_interpreter_run(buf);
+    if (err == ESP_OK) {
+        httpd_resp_sendstr(req, "Script started");
+    } else if (err == ESP_ERR_INVALID_STATE) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Another script is already running");
+    } else {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start script");
+    }
+    return ESP_OK;
+}
+
+static esp_err_t http_post_lua_kill_handler(httpd_req_t *req) {
+    lua_interpreter_kill();
+    httpd_resp_sendstr(req, "Script stopped");
+    return ESP_OK;
+}
+
+static esp_err_t http_post_lua_upload_handler(httpd_req_t *req) {
+    char filename[64] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-Filename", filename, sizeof(filename)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-Filename header");
+        return ESP_FAIL;
+    }
+
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
+
+    FILE *f = fopen(filepath, "w");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file %s for writing", filepath);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
+        return ESP_FAIL;
+    }
+
+    char *buf = malloc(1024);
+    if (!buf) {
+        fclose(f);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
+    int received;
+    int remaining = req->content_len;
+    while (remaining > 0 && (received = httpd_req_recv(req, buf, remaining > 1024 ? 1024 : remaining)) > 0) {
+        fwrite(buf, 1, received, f);
+        remaining -= received;
+    }
+    fclose(f);
+    free(buf);
+
+    httpd_resp_sendstr(req, "File uploaded successfully");
+    return ESP_OK;
+}
+
+static const httpd_uri_t get_lua_list_uri = {
+    .uri      = "/lua/list",
+    .method   = HTTP_GET,
+    .handler  = http_get_lua_list_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t post_lua_run_uri = {
+    .uri      = "/lua/run",
+    .method   = HTTP_POST,
+    .handler  = http_post_lua_run_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t post_lua_kill_uri = {
+    .uri      = "/lua/kill",
+    .method   = HTTP_POST,
+    .handler  = http_post_lua_kill_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t post_lua_upload_uri = {
+    .uri      = "/lua/upload",
+    .method   = HTTP_POST,
+    .handler  = http_post_lua_upload_handler,
+    .user_ctx = NULL
+};
+
 static const httpd_uri_t get_root_uri = {
     .uri      = "/",
     .method   = HTTP_GET,
@@ -281,6 +383,7 @@ httpd_handle_t start_webserver(app_config_t *config)
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
+    httpd_cfg.max_uri_handlers = 12; // Increase limit to accommodate Lua API
     httpd_cfg.uri_match_fn = httpd_uri_match_wildcard; // Enable wildcard matching if needed
     httpd_cfg.close_fn = httpd_close_cb;
 
@@ -290,6 +393,10 @@ httpd_handle_t start_webserver(app_config_t *config)
         httpd_register_uri_handler(server, &get_config_uri);
         httpd_register_uri_handler(server, &put_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
+        httpd_register_uri_handler(server, &get_lua_list_uri);
+        httpd_register_uri_handler(server, &post_lua_run_uri);
+        httpd_register_uri_handler(server, &post_lua_kill_uri);
+        httpd_register_uri_handler(server, &post_lua_upload_uri);
     }
     return server;
 }

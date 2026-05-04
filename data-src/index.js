@@ -267,4 +267,91 @@ document.addEventListener('DOMContentLoaded', async function() {
             alert('Error saving configuration.');
         }
     });
+
+    // Lua Script Management
+    window.fetchLuaScripts = async function() {
+        try {
+            const response = await fetch('/lua/list');
+            const files = await response.json();
+            const list = $('luaFiles');
+            list.innerHTML = '';
+            files.forEach(file => {
+                const li = document.createElement('li');
+                li.style.display = 'flex';
+                li.style.justifyContent = 'space-between';
+                li.style.marginBottom = '5px';
+                li.style.background = '#eee';
+                li.style.padding = '5px';
+                li.style.borderRadius = '4px';
+                li.textContent = file;
+                const runBtn = document.createElement('button');
+                runBtn.textContent = 'Run';
+                runBtn.type = 'button';
+                runBtn.style.marginLeft = '10px';
+                runBtn.onclick = () => window.runLuaScript(file);
+                li.appendChild(runBtn);
+                list.appendChild(li);
+            });
+        } catch (error) {
+            console.error('Error fetching Lua scripts:', error);
+        }
+    };
+
+    window.uploadLuaScript = async function() {
+        const fileInput = $('luaUploadFile');
+        if (fileInput.files.length === 0) {
+            alert('Please select a file first.');
+            return;
+        }
+        const file = fileInput.files[0];
+        try {
+            const response = await fetch('/lua/upload', {
+                method: 'POST',
+                headers: {
+                    'X-Filename': file.name
+                },
+                body: file
+            });
+            if (response.ok) {
+                alert('Uploaded successfully!');
+                window.fetchLuaScripts();
+            } else {
+                alert('Upload failed.');
+            }
+        } catch (error) {
+            console.error('Error uploading Lua script:', error);
+        }
+    };
+
+    window.runLuaScript = async function(filename) {
+        try {
+            const response = await fetch('/lua/run', {
+                method: 'POST',
+                body: filename
+            });
+            if (response.ok) {
+                $('luaStatus').textContent = 'Status: Running ' + filename;
+            } else {
+                const err = await response.text();
+                alert('Failed to run: ' + err);
+            }
+        } catch (error) {
+            console.error('Error running Lua script:', error);
+        }
+    };
+
+    window.killLuaScript = async function() {
+        try {
+            const response = await fetch('/lua/kill', {
+                method: 'POST'
+            });
+            if (response.ok) {
+                $('luaStatus').textContent = 'Status: Idle';
+            }
+        } catch (error) {
+            console.error('Error killing Lua script:', error);
+        }
+    };
+
+    window.fetchLuaScripts();
 });
