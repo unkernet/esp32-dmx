@@ -19,7 +19,9 @@
 #include "app_config.h"
 #include "app_config_nvs.h"
 #include "dns.h"
+#ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
+#endif
 
 static const char *TAG = "MAIN";
 
@@ -73,8 +75,10 @@ void app_main() {
     dmx_2_init(&app_config);
     #endif
     ws2812_init(&app_config);
-    lua_interpreter_init();
     start_webserver(&app_config);
     start_artnet_server(&app_config);
     start_mdns();
+    #ifdef LUA_INTERPRETER
+    lua_interpreter_init();
+    #endif
 }

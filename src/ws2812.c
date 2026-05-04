@@ -41,13 +41,17 @@ static void ws2812_tx_task(void *arg)
 }
 
 void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (!app_config || app_config->ws2812_universe != universe || length > sizeof(tx_data)) {
+    if (!app_config || app_config->ws2812_universe != universe) {
         return;
     }
 
     if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
         // ESP_LOGE(TAG, "tx queue overflow");
         return;
+    }
+
+    if (length > sizeof(tx_data)) {
+        length = sizeof(tx_data);
     }
 
     memcpy(tx_data, data, length);

@@ -8,24 +8,26 @@
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "esp_spiffs.h"
+#include "hardware_config.h"
 #include "web_server.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
 #include "router.h"
+#ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
-#include "wifi_manager.h"
+#endif
 
-#define MAX_WS_CLIENTS 5
+#define MAX_WS_CLIENTS 4
 
 typedef struct {
     httpd_handle_t handle;
     int fd;
+    bool active;
 } ws_client_info_t;
 
 static const char *TAG = "WEB_SERVER";
 
-static ws_client_info_t ws_clients[MAX_WS_CLIENTS];
-static int ws_clients_count = 0;
+static ws_client_info_t active_ws_client = { .handle = NULL, .fd = -1, .active = false };
 static SemaphoreHandle_t ws_mutex = NULL;
 
 extern void esp_restart(void);
@@ -79,14 +81,12 @@ static esp_err_t serve_static_file(httpd_req_t *req)
 
     struct stat st;
     if (get_file_info(full_filepath_gz, &st) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to find file: %s", full_filepath_gz);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
 
     FILE* f = fopen(full_filepath_gz, "r");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file %s", full_filepath_gz);
         httpd_resp_send_404(req);
         return ESP_FAIL;
     }
@@ -96,7 +96,7 @@ static esp_err_t serve_static_file(httpd_req_t *req)
 
     char *chunk = malloc(1024);
     if (chunk == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for file buffer");
+        ESP_LOGE(TAG, "Failed to allocate memory");
         fclose(f);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
@@ -120,7 +120,6 @@ static esp_err_t serve_static_file(httpd_req_t *req)
 static esp_err_t http_get_config_handler(httpd_req_t *req)
 {
     if (global_web_config == NULL) {
-        ESP_LOGE(TAG, "Configuration not initialized for web server.");
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Config not available");
         return ESP_FAIL;
     }
@@ -133,13 +132,11 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
 static esp_err_t http_put_config_handler(httpd_req_t *req)
 {
     if (global_web_config == NULL) {
-        ESP_LOGE(TAG, "Configuration not initialized for web server.");
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Config not available");
         return ESP_FAIL;
     }
 
     if (req->content_len != sizeof(app_config_t)) {
-        ESP_LOGE(TAG, "Received config size mismatch. Expected %d, got %d", sizeof(app_config_t), req->content_len);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid config size");
         return ESP_FAIL;
     }
@@ -149,7 +146,6 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
             httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timed out");
         } else {
-            ESP_LOGE(TAG, "Failed to receive config data: %d", ret);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive data");
         }
         return ESP_FAIL;
@@ -163,7 +159,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_sendstr(req, "Configuration saved. Restarting...");
+    httpd_resp_send(req, NULL, 0);
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     esp_restart();
 
@@ -173,31 +169,31 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
 static void remove_ws_client(int fd)
 {
     xSemaphoreTake(ws_mutex, portMAX_DELAY);
-    int i;
-    for (i = 0; i < ws_clients_count; i++) {
-        if (ws_clients[i].fd == fd) {
-            ESP_LOGI(TAG, "Client disconnected: %d", fd);
-            close(fd);
-            for (int j = i; j < ws_clients_count - 1; j++) {
-                ws_clients[j] = ws_clients[j + 1];
-            }
-            ws_clients_count--;
-            break;
-        }
+    ESP_LOGI(TAG, "Client disconnected: %d", fd);
+    if (active_ws_client.active && active_ws_client.fd == fd) {
+        active_ws_client.active = false;
+        active_ws_client.fd = -1;
+        active_ws_client.handle = NULL;
     }
+    close(fd);
     xSemaphoreGive(ws_mutex);
 }
 
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "Handshake done, the new connection was opened");
+        ESP_LOGI(TAG, "WS handshake done");
         xSemaphoreTake(ws_mutex, portMAX_DELAY);
-        if (ws_clients_count < MAX_WS_CLIENTS) {
-            ws_clients[ws_clients_count].fd = httpd_req_to_sockfd(req);
-            ws_clients[ws_clients_count].handle = req->handle;
-            ws_clients_count++;
+        
+        // If there's already a client, disconnect it first
+        if (active_ws_client.active) {
+            httpd_sess_trigger_close(active_ws_client.handle, active_ws_client.fd);
         }
+
+        active_ws_client.fd = httpd_req_to_sockfd(req);
+        active_ws_client.handle = req->handle;
+        active_ws_client.active = true;
+        
         xSemaphoreGive(ws_mutex);
         return ESP_OK;
     }
@@ -205,7 +201,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     httpd_ws_frame_t ws_pkt;
     uint8_t *buf = NULL;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_BINARY; // Changed to binary to receive binary data
+    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK) {
         if (ret == ESP_ERR_HTTPD_INVALID_REQ) {
@@ -226,18 +222,12 @@ static esp_err_t ws_handler(httpd_req_t *req)
         }
 
         if (ws_pkt.type == HTTPD_WS_TYPE_BINARY) {
-            if (ws_pkt.len > 2) { // At least 2 bytes for universe + 1 byte for data
+            if (ws_pkt.len > 2) {
                 uint16_t universe = ws_pkt.payload[0] + (ws_pkt.payload[1] << 8);
                 const uint8_t *data = (const uint8_t *)(ws_pkt.payload + 2);
                 uint16_t len = ws_pkt.len - 2;
                 route_dmx_data(DATA_SOURCE_WS, universe, data, len);
-            } else {
-                ESP_LOGW(TAG, "Received binary WS message too short (len: %d)", ws_pkt.len);
             }
-        } else {
-            // Echo back text messages
-            // ESP_LOGI(TAG, "Got text packet with message: %s", ws_pkt.payload);
-            // httpd_ws_send_frame(req, &ws_pkt);
         }
         free(buf);
     }
@@ -245,6 +235,43 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static const httpd_uri_t get_root_uri = {
+    .uri      = "/",
+    .method   = HTTP_GET,
+    .handler  = serve_static_file,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t get_js_uri = {
+    .uri      = "/index.js",
+    .method   = HTTP_GET,
+    .handler  = serve_static_file,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t get_config_uri = {
+    .uri      = "/config",
+    .method   = HTTP_GET,
+    .handler  = http_get_config_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t put_config_uri = {
+    .uri      = "/config",
+    .method   = HTTP_PUT,
+    .handler  = http_put_config_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t ws_uri = {
+    .uri        = "/ws",
+    .method     = HTTP_GET,
+    .handler    = ws_handler,
+    .user_ctx   = NULL,
+    .is_websocket = true
+};
+
+#ifdef LUA_INTERPRETER
 static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
     return lua_interpreter_stream_scripts(req);
 }
@@ -393,42 +420,7 @@ static const httpd_uri_t put_lua_script_uri = {
     .handler  = http_put_lua_script_handler,
     .user_ctx = NULL
 };
-
-static const httpd_uri_t get_root_uri = {
-    .uri      = "/",
-    .method   = HTTP_GET,
-    .handler  = serve_static_file,
-    .user_ctx = NULL
-};
-
-static const httpd_uri_t get_js_uri = {
-    .uri      = "/index.js",
-    .method   = HTTP_GET,
-    .handler  = serve_static_file,
-    .user_ctx = NULL
-};
-
-static const httpd_uri_t get_config_uri = {
-    .uri      = "/config",
-    .method   = HTTP_GET,
-    .handler  = http_get_config_handler,
-    .user_ctx = NULL
-};
-
-static const httpd_uri_t put_config_uri = {
-    .uri      = "/config",
-    .method   = HTTP_PUT,
-    .handler  = http_put_config_handler,
-    .user_ctx = NULL
-};
-
-static const httpd_uri_t ws_uri = {
-    .uri        = "/ws",
-    .method     = HTTP_GET,
-    .handler    = ws_handler,
-    .user_ctx   = NULL,
-    .is_websocket = true
-};
+#endif
 
 void httpd_close_cb(httpd_handle_t hd, int sockfd)
 {
@@ -452,25 +444,27 @@ httpd_handle_t start_webserver(app_config_t *config)
         httpd_register_uri_handler(server, &get_config_uri);
         httpd_register_uri_handler(server, &put_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
+        #ifdef LUA_INTERPRETER
         httpd_register_uri_handler(server, &get_lua_list_uri);
         httpd_register_uri_handler(server, &post_lua_run_uri);
         httpd_register_uri_handler(server, &post_lua_kill_uri);
         httpd_register_uri_handler(server, &get_lua_script_uri);
         httpd_register_uri_handler(server, &put_lua_script_uri);
+        #endif
     }
     return server;
 }
 
 void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
     if (length > 512) {
-        return;
+        length = 512;
     }
 
     if (xSemaphoreTake(ws_mutex, 0) != pdTRUE) {
         return; // Failed to get lock
     }
 
-    if (ws_clients_count > 0) {
+    if (active_ws_client.active) {
         uint8_t buf[514];
         buf[0] = universe & 0xff;
         buf[1] = universe >> 8;
@@ -481,11 +475,7 @@ void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) 
         ws_pkt.len = length + 2;
         ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
-        // ESP_LOGI(TAG, "Send ws, len: %d, clients: %d", ws_pkt.len, ws_clients_count);
-
-        for (int i = 0; i < ws_clients_count; i++) {
-            httpd_ws_send_frame_async(ws_clients[i].handle, ws_clients[i].fd, &ws_pkt);
-        }
+        httpd_ws_send_frame_async(active_ws_client.handle, active_ws_client.fd, &ws_pkt);
     }
     xSemaphoreGive(ws_mutex);
 }

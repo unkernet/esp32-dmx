@@ -264,7 +264,7 @@ esp_err_t start_artnet_server(app_config_t *config) {
 }
 
 void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if ((app_config->enabled_modules & MOD_EN_ARTNET_OUT) == 0 || length > 512) {
+    if ((app_config->enabled_modules & MOD_EN_ARTNET_OUT) == 0) {
         return;
     }
     if (xSemaphoreTake(tx_sem, (TickType_t)0) != pdTRUE) {
@@ -273,6 +273,10 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
 
     if (++sequence == 0) {
         sequence = 1;
+    }
+
+    if (length > 512) {
+        length = 512;
     }
 
     artdmx_packet_t *reply = (artdmx_packet_t *)tx_packet.buffer;

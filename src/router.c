@@ -8,7 +8,9 @@
 #endif
 #include "web_server.h"
 #include "ws2812.h"
+#ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
+#endif
 
 void route_dmx_data(dmx_data_source_t source, uint16_t universe, const uint8_t *data, uint16_t length) {
     send_ambitful_dmx_data(universe, data, length);
@@ -23,7 +25,9 @@ void route_dmx_data(dmx_data_source_t source, uint16_t universe, const uint8_t *
         send_artnet_dmx_data(universe, data, length);
     }
 
+    #ifdef LUA_INTERPRETER
     if (source != DATA_SOURCE_LUA) {
         send_lua_data(universe, data, length);
     }
+    #endif
 }

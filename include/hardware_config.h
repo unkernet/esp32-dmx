@@ -5,7 +5,7 @@
 
 #define DMX_RX_PIN    5
 #define DMX_TX_PIN    6
-// #define DMX_2_EN        -1
+// #define DMX_EN        -1
 
 // Second DMX port is optional and can be disabled
 #define DMX_2_RX_PIN    3
@@ -13,5 +13,8 @@
 #define DMX_2_EN        1
 
 #define WS2812_PIN    7
+
+// Lua interpreter can be disabled, ~200Kb flash size
+#define LUA_INTERPRETER
 
 #endif // HARDWARE_CONFIG_H

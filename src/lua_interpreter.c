@@ -50,16 +50,19 @@ static int l_dmx_send(lua_State *L) {
     return 0;
 }
 
+static const char *KILLED_SENTINEL = "KILLED";
+
 static void lua_kill_hook(lua_State *L, lua_Debug *ar) {
     if (should_stop) {
-        luaL_error(L, "Script killed");
+        lua_pushlightuserdata(L, (void *)KILLED_SENTINEL);
+        lua_error(L);
     }
 }
 
 void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
     if (universe == listen_universe) {
         if (xSemaphoreTake(dmx_data_sem, 0) == pdTRUE) {
-            dmx_buffer_len = (length > 512) ? 512 : length;
+            dmx_buffer_len = (length > sizeof(dmx_buffer)) ? sizeof(dmx_buffer) : length;
             memcpy(dmx_buffer, data, dmx_buffer_len);
             buffered_universe = universe;
             xSemaphoreGive(dmx_data_sem);
@@ -128,13 +131,20 @@ static void lua_task(void *pvParameters) {
     lua_sethook(L, lua_kill_hook, LUA_MASKCOUNT, 100);
 
     ESP_LOGI(TAG, "Running script: %s", current_script);
-    if (luaL_dofile(L, full_path) != LUA_OK) {
-        const char *error = lua_tostring(L, -1);
-        ESP_LOGE(TAG, "Lua error: %s", error);
-        strncpy(last_error, error, sizeof(last_error) - 1);
-        last_error[sizeof(last_error) - 1] = '\0';
+    
+    int status = luaL_dofile(L, full_path);
+    if (status != LUA_OK) {
+        if (lua_islightuserdata(L, -1) && lua_touserdata(L, -1) == (void *)KILLED_SENTINEL) {
+            ESP_LOGI(TAG, "Script was killed");
+            last_error[0] = '\0';
+        } else {
+            const char *error = lua_tostring(L, -1);
+            ESP_LOGE(TAG, "Lua error: %s", error);
+            strncpy(last_error, error, sizeof(last_error) - 1);
+            last_error[sizeof(last_error) - 1] = '\0';
+        }
     } else {
-        ESP_LOGI(TAG, "Script finished successfully");
+        ESP_LOGI(TAG, "Script finished");
         last_error[0] = '\0';
     }
 
@@ -142,7 +152,6 @@ static void lua_task(void *pvParameters) {
     lua_task_handle = NULL;
     current_script[0] = '\0';
     listen_universe = -1;
-    ESP_LOGI(TAG, "Lua task finished");
     vTaskDelete(NULL);
 }
 
@@ -161,7 +170,6 @@ esp_err_t lua_interpreter_init(void) {
 
 esp_err_t lua_interpreter_run(const char *filename) {
     if (lua_task_handle != NULL) {
-        ESP_LOGI(TAG, "Killing currently running script to start %s", filename);
         lua_interpreter_kill();
     }
 
@@ -193,12 +201,15 @@ esp_err_t lua_interpreter_kill(void) {
     while (lua_task_handle != NULL && timeout-- > 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    
-    if (lua_task_handle != NULL) {
-        ESP_LOGW(TAG, "Forcibly deleting Lua task");
-        vTaskDelete(lua_task_handle);
+
+    TaskHandle_t target_handle = lua_task_handle;
+    if (target_handle != NULL) {
+        ESP_LOGW(TAG, "Script was forcibly killed");
+        strncpy(last_error, "Script was forcibly killed", sizeof(last_error) - 1);
+        vTaskDelete(target_handle);
         lua_task_handle = NULL;
         current_script[0] = '\0';
+        listen_universe = -1;
     }
     return ESP_OK;
 }

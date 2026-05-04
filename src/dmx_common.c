@@ -176,7 +176,7 @@ static void dmx_tx_task(void *arg)
 void send_dmx_data_common(dmx_config *cfg, const uint8_t * data, uint16_t length)
 {
     if (length > DMX_BUF_SIZE - 2) {
-        return;
+        length = DMX_BUF_SIZE - 2;
     }
 
     if (xSemaphoreTake(cfg->tx_sem, 0) != pdTRUE) {
