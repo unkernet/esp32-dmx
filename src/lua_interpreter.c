@@ -12,17 +12,18 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#define DATA_NOTIFY (0) // Increase CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES if set greater then 0
+#define EMPTY (-1)
 static const char *TAG = "LUA";
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool should_stop = false;
 static char current_script[64] = "";
 static char last_error[64] = "";
 static SemaphoreHandle_t dmx_data_sem = NULL;
-static SemaphoreHandle_t data_ready_sem = NULL;
 static uint8_t dmx_buffer[512];
 static uint16_t dmx_buffer_len = 0;
-static uint16_t listen_universe = -1;
-static uint16_t buffered_universe = -1;
+static uint16_t listen_universe = EMPTY;
+static uint16_t buffered_universe = EMPTY;
 
 static int l_dmx_send(lua_State *L) {
     int universe = luaL_checkinteger(L, 1);
@@ -66,7 +67,10 @@ void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
             memcpy(dmx_buffer, data, dmx_buffer_len);
             buffered_universe = universe;
             xSemaphoreGive(dmx_data_sem);
-            xSemaphoreGive(data_ready_sem);
+            TaskHandle_t task_handle = lua_task_handle;
+            if (task_handle) {
+                xTaskNotifyGiveIndexed(task_handle, DATA_NOTIFY);
+            }
         }
     }
 }
@@ -75,9 +79,10 @@ static int l_dmx_read(lua_State *L) {
     int universe = luaL_checkinteger(L, 1);
     int timeout = luaL_checkinteger(L, 2);
 
+    // Keep listen even after TaskNotify timeout to be able to receive the data on next dmx_read() call
     listen_universe = universe;
 
-    if (xSemaphoreTake(data_ready_sem, pdMS_TO_TICKS(timeout)) == pdTRUE) {
+    if (ulTaskNotifyTakeIndexed(DATA_NOTIFY, pdTRUE, pdMS_TO_TICKS(timeout)) > 0) {
         lua_kill_hook(L, NULL);
         if (xSemaphoreTake(dmx_data_sem, portMAX_DELAY) == pdTRUE) {
             if (buffered_universe == (uint16_t)universe) {
@@ -151,18 +156,16 @@ static void lua_task(void *pvParameters) {
     lua_close(L);
     lua_task_handle = NULL;
     current_script[0] = '\0';
-    listen_universe = -1;
+    listen_universe = EMPTY;
     vTaskDelete(NULL);
 }
 
 esp_err_t lua_interpreter_init(void) {
-    data_ready_sem = xSemaphoreCreateBinary();
     dmx_data_sem = xSemaphoreCreateBinary();
     xSemaphoreGive(dmx_data_sem);
 
     struct stat st;
     if (stat("/spiffs/init.lua", &st) == 0) {
-        ESP_LOGI(TAG, "Found init.lua, starting...");
         return lua_interpreter_run("init.lua");
     }
     return ESP_OK;
@@ -176,7 +179,7 @@ esp_err_t lua_interpreter_run(const char *filename) {
     should_stop = false;
     last_error[0] = '\0';
     strncpy(current_script, filename, sizeof(current_script) - 1);
-    listen_universe = -1;
+    listen_universe = EMPTY;
 
     xTaskCreate(lua_task, "lua_task", 8192, NULL, 5, &lua_task_handle);
     if (lua_task_handle == NULL) {
@@ -190,26 +193,28 @@ esp_err_t lua_interpreter_kill(void) {
     if (lua_task_handle == NULL) {
         return ESP_OK;
     }
+
+    TaskHandle_t task_handle = lua_task_handle;
     should_stop = true;
     
     // Abort any pending delay (sleep) immediately
-    xTaskAbortDelay(lua_task_handle);
-    xSemaphoreGive(data_ready_sem);
+    xTaskNotifyGiveIndexed(task_handle, DATA_NOTIFY);
+    xTaskAbortDelay(task_handle);
     
     // Wait a bit for it to stop gracefully
     int timeout = 100; // 1 second
     while (lua_task_handle != NULL && timeout-- > 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+    task_handle = lua_task_handle;
 
-    TaskHandle_t target_handle = lua_task_handle;
-    if (target_handle != NULL) {
+    if (task_handle != NULL) {
         ESP_LOGW(TAG, "Script was forcibly killed");
         strncpy(last_error, "Script was forcibly killed", sizeof(last_error) - 1);
-        vTaskDelete(target_handle);
+        vTaskDelete(task_handle);
         lua_task_handle = NULL;
         current_script[0] = '\0';
-        listen_universe = -1;
+        listen_universe = EMPTY;
     }
     return ESP_OK;
 }
@@ -243,6 +248,12 @@ esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
     char status_buf[192];
     int status_len;
     
+    // Escape last_error
+    for (char *p = last_error; *p && (p < last_error + sizeof(last_error)); p++) {
+        if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t')
+            *p = ' ';
+    }
+
     const char *running = lua_interpreter_is_running() ? current_script : NULL;
     const char *error = (last_error[0] != '\0') ? last_error : NULL;
 
