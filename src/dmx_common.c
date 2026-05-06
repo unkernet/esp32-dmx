@@ -204,7 +204,7 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
+    uart_driver_install(cfg->uart_num, 600, 0, 2, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
     uart_param_config(cfg->uart_num, &uart_cfg);
     uart_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
 
@@ -214,8 +214,8 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
     xSemaphoreGive(cfg->consumer_sem);
 
     if ((cfg->enabled & 1) != 0) {
-        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, NULL);
-        xTaskCreate(dmx_consumer_task, "dmx_consumer", 3072, cfg, 5, &cfg->consumer_task);
+        xTaskCreate(dmx_rx_task, "dmx_rx", 1024, cfg, 7, NULL);
+        xTaskCreate(dmx_consumer_task, "dmx_consumer", 2048, cfg, 5, &cfg->consumer_task);
     } else {
         ESP_LOGI(cfg->instance_name, "rx disabled");
     }
@@ -223,7 +223,7 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         if (cfg->repeat_interval < 1) {
             cfg->repeat_interval = 1;
         }
-        xTaskCreate(dmx_tx_task, "dmx_tx", 2048, cfg, 5, &cfg->tx_task);
+        xTaskCreate(dmx_tx_task, "dmx_tx", 1024, cfg, 5, &cfg->tx_task);
     } else {
         ESP_LOGI(cfg->instance_name, "tx disabled");
     }

@@ -363,7 +363,7 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     }
     ble_addr[5] &= 0x3f; // Non-Resolvable Private Address (NRPA)
     s_ble_data_mutex = xSemaphoreCreateMutex();
-    xTaskCreate(restart_advertise_task, "advertise_task", 2048, NULL, 5, &advertise_task);
+    xTaskCreate(restart_advertise_task, "ble_adv", 2048, NULL, 5, &advertise_task);
 
     nimble_port_init();
 
@@ -375,9 +375,12 @@ esp_err_t ambitful_ble_init(app_config_t *config)
 }
 
 void send_ambitful_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
+    if (app_config == NULL) {
+        return;
+    }
     uint8_t ambitful_groups = app_config->ambitful_groups;
     uint16_t ambitful_addr = app_config->ambitful_addr;
-    if (app_config == NULL || app_config->ambitful_universe != universe || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
+    if (app_config->ambitful_universe != universe || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
         return;
     }
     if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {

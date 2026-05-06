@@ -361,7 +361,7 @@ void wifi_manager_init(app_config_t *config)
     wifi_init_config_t wicfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&wicfg);
 
-    xTaskCreate(reconnect_task, "wifi_reconnect", 4096, NULL, 5, NULL);
+    xTaskCreate(reconnect_task, "wifi_reconnect", 2048, NULL, 5, NULL);
 
     if (strlen(cfg->sta_ssid)) {
         if (!wifi_start_sta()) {

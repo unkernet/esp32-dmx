@@ -14,19 +14,23 @@
 
 #define DATA_NOTIFY (0) // Increase CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES if set greater then 0
 #define EMPTY (-1)
+#define MAX_DATA_LEN 512
+#define C_SCRIPT_LEN 64
+#define ERROR_LEN 128
 static const char *TAG = "LUA";
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool should_stop = false;
-static char current_script[64] = "";
-static char last_error[64] = "";
+static char *current_script;
+static char *last_error;
 static SemaphoreHandle_t dmx_data_sem = NULL;
-static uint8_t dmx_buffer[512];
+static uint8_t *dmx_buffer;
 static uint16_t dmx_buffer_len = 0;
 static uint16_t listen_universe = EMPTY;
 static uint16_t buffered_universe = EMPTY;
 
 static int l_dmx_send(lua_State *L) {
     int universe = luaL_checkinteger(L, 1);
+    uint8_t debug = lua_toboolean(L, 3);
     
     int type = lua_type(L, 2);
     if (type == LUA_TTABLE) {
@@ -38,16 +42,26 @@ static int l_dmx_send(lua_State *L) {
             data[i] = (uint8_t)lua_tointeger(L, -1);
             lua_pop(L, 1);
         }
-        route_dmx_data(DATA_SOURCE_LUA, universe, data, len);
+        route_dmx_data(debug ? DATA_SOURCE_LUA_DEBUG : DATA_SOURCE_LUA, universe, data, len);
     } else if (type == LUA_TSTRING) {
         size_t str_len;
         const char *str = lua_tolstring(L, 2, &str_len);
         size_t len = (str_len > 512) ? 512 : str_len;
-        route_dmx_data(DATA_SOURCE_LUA, universe, (const uint8_t *)str, len);
+        route_dmx_data(debug ? DATA_SOURCE_LUA_DEBUG : DATA_SOURCE_LUA, universe, (const uint8_t *)str, len);
     } else {
         return luaL_error(L, "DMX data must be a table or string");
     }
     
+    // Script will run much more stable with regular garbage collection
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    return 0;
+}
+
+static int l_print(lua_State *L) {
+    size_t str_len;
+    const char *str = lua_tolstring(L, 1, &str_len);
+    ESP_LOGW(TAG, "%s", str);
     return 0;
 }
 
@@ -63,7 +77,7 @@ static void lua_kill_hook(lua_State *L, lua_Debug *ar) {
 void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
     if (universe == listen_universe) {
         if (xSemaphoreTake(dmx_data_sem, 0) == pdTRUE) {
-            dmx_buffer_len = (length > sizeof(dmx_buffer)) ? sizeof(dmx_buffer) : length;
+            dmx_buffer_len = (length > MAX_DATA_LEN) ? MAX_DATA_LEN : length;
             memcpy(dmx_buffer, data, dmx_buffer_len);
             buffered_universe = universe;
             xSemaphoreGive(dmx_data_sem);
@@ -87,6 +101,7 @@ static int l_dmx_read(lua_State *L) {
         if (xSemaphoreTake(dmx_data_sem, portMAX_DELAY) == pdTRUE) {
             if (buffered_universe == (uint16_t)universe) {
                 lua_pushlstring(L, (const char *)dmx_buffer, dmx_buffer_len);
+                buffered_universe = EMPTY; // Mark data as consumed
                 xSemaphoreGive(dmx_data_sem);
                 return 1;
             }
@@ -117,7 +132,7 @@ static void lua_task(void *pvParameters) {
     lua_State *L = luaL_newstate();
     if (L == NULL) {
         ESP_LOGE(TAG, "Failed to create Lua state");
-        strncpy(last_error, "Failed to create Lua state", sizeof(last_error) - 1);
+        strncpy(last_error, "Failed to create Lua state", ERROR_LEN - 1);
         lua_task_handle = NULL;
         current_script[0] = '\0';
         vTaskDelete(NULL);
@@ -131,6 +146,7 @@ static void lua_task(void *pvParameters) {
     lua_register(L, "dmx_read", l_dmx_read);
     lua_register(L, "random", l_random);
     lua_register(L, "sleep", l_sleep);
+    lua_register(L, "print", l_print);
 
     // Set hook to allow killing the script
     lua_sethook(L, lua_kill_hook, LUA_MASKCOUNT, 100);
@@ -145,8 +161,8 @@ static void lua_task(void *pvParameters) {
         } else {
             const char *error = lua_tostring(L, -1);
             ESP_LOGE(TAG, "Lua error: %s", error);
-            strncpy(last_error, error, sizeof(last_error) - 1);
-            last_error[sizeof(last_error) - 1] = '\0';
+            strncpy(last_error, error, ERROR_LEN - 1);
+            last_error[ERROR_LEN - 1] = '\0';
         }
     } else {
         ESP_LOGI(TAG, "Script finished");
@@ -172,13 +188,31 @@ esp_err_t lua_interpreter_init(void) {
 }
 
 esp_err_t lua_interpreter_run(const char *filename) {
+    if (!dmx_buffer) {
+        // Allocate memory on first run
+        if (!(dmx_buffer = malloc(MAX_DATA_LEN))) {
+            return ESP_ERR_NO_MEM;
+        }
+        if (!(last_error = malloc(ERROR_LEN))) {
+            free(dmx_buffer);
+            dmx_buffer = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        if (!(current_script = malloc(C_SCRIPT_LEN))) {
+            free(dmx_buffer);
+            free(last_error);
+            dmx_buffer = NULL;
+            last_error = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
     if (lua_task_handle != NULL) {
         lua_interpreter_kill();
     }
 
     should_stop = false;
     last_error[0] = '\0';
-    strncpy(current_script, filename, sizeof(current_script) - 1);
+    strncpy(current_script, filename, C_SCRIPT_LEN - 1);
     listen_universe = EMPTY;
 
     xTaskCreate(lua_task, "lua_task", 8192, NULL, 5, &lua_task_handle);
@@ -210,7 +244,7 @@ esp_err_t lua_interpreter_kill(void) {
 
     if (task_handle != NULL) {
         ESP_LOGW(TAG, "Script was forcibly killed");
-        strncpy(last_error, "Script was forcibly killed", sizeof(last_error) - 1);
+        strncpy(last_error, "Script was forcibly killed", ERROR_LEN - 1);
         vTaskDelete(task_handle);
         lua_task_handle = NULL;
         current_script[0] = '\0';
@@ -245,11 +279,11 @@ esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
     }
     closedir(dir);
 
-    char status_buf[192];
+    char status_buf[ERROR_LEN + C_SCRIPT_LEN + 32];
     int status_len;
     
     // Escape last_error
-    for (char *p = last_error; *p && (p < last_error + sizeof(last_error)); p++) {
+    for (char *p = last_error; *p && (p < last_error + ERROR_LEN); p++) {
         if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t')
             *p = ' ';
     }

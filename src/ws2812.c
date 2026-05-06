@@ -7,6 +7,7 @@
 #include "hardware_config.h"
 
 #define WS2812_RESET_US 75
+#define MAX_DATA_LEN 512
 static const char *TAG = "WS_2812";
 
 static TaskHandle_t tx_task = NULL;
@@ -14,7 +15,7 @@ static SemaphoreHandle_t tx_sem;
 static rmt_channel_handle_t rmt_chan;
 static rmt_encoder_handle_t bytes_encoder;
 static app_config_t *app_config;
-static uint8_t tx_data[512];
+static uint8_t *tx_data;
 static size_t tx_len;
 
 static void ws2812_tx_task(void *arg)
@@ -50,8 +51,8 @@ void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) 
         return;
     }
 
-    if (length > sizeof(tx_data)) {
-        length = sizeof(tx_data);
+    if (length > MAX_DATA_LEN) {
+        length = MAX_DATA_LEN;
     }
 
     memcpy(tx_data, data, length);
@@ -65,6 +66,11 @@ esp_err_t ws2812_init(app_config_t *config) {
         return ESP_OK; // Disabled
     }
 
+    tx_data = malloc(MAX_DATA_LEN);
+    if (!tx_data) {
+        ESP_LOGE(TAG, "Failed to allocate memory");
+        return ESP_ERR_NO_MEM;
+    }
     app_config = config;
 
     rmt_tx_channel_config_t tx_cfg = {

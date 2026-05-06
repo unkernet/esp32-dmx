@@ -20,13 +20,13 @@ void route_dmx_data(dmx_data_source_t source, uint16_t universe, const uint8_t *
     send_dmx_2_data(universe, data, length);
     #endif
 
-    if (source != DATA_SOURCE_ARTNET && source != DATA_SOURCE_WS) {
+    if (source != DATA_SOURCE_ARTNET && source != DATA_SOURCE_WS && source != DATA_SOURCE_LUA) {
         send_ws_dmx_data(universe, data, length);
         send_artnet_dmx_data(universe, data, length);
     }
 
     #ifdef LUA_INTERPRETER
-    if (source != DATA_SOURCE_LUA) {
+    if (source != DATA_SOURCE_LUA && source != DATA_SOURCE_LUA_DEBUG) {
         send_lua_data(universe, data, length);
     }
     #endif

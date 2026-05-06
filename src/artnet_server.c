@@ -258,8 +258,8 @@ esp_err_t start_artnet_server(app_config_t *config) {
     }
     ESP_LOGI(TAG, "Socket bound, port %d", ARTNET_PORT);
 
-    xTaskCreate(artnet_server_task, "artnet_server", 3072, NULL, 7, &srv_task);
-    xTaskCreate(artnet_sender_task, "artnet_sender", 2048, NULL, 5, &send_task);
+    xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 7, &srv_task);
+    xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
     return ESP_OK;
 }
 
