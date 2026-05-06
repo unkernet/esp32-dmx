@@ -167,6 +167,22 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t http_get_task_list_handler(httpd_req_t *req)
+{
+    char buf[1024];
+    httpd_resp_set_hdr(req, "Content-Type", "text/plain");
+    sprintf(buf, "heap: free %d %d block %d int %d min %d\n",
+        esp_get_free_heap_size(), heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+        esp_get_free_internal_heap_size(),
+        esp_get_minimum_free_heap_size());
+    httpd_resp_send_chunk(req, buf, strlen(buf));
+    vTaskList(buf);
+    httpd_resp_send_chunk(req, buf, strlen(buf));
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}   
+
 static void remove_ws_client(int fd)
 {
     xSemaphoreTake(ws_mutex, portMAX_DELAY);
@@ -280,6 +296,13 @@ static const httpd_uri_t get_wifi_scan_uri = {
     .uri      = "/wifi/scan",
     .method   = HTTP_GET,
     .handler  = http_get_wifi_scan_handler,
+    .user_ctx = NULL
+};
+
+static const httpd_uri_t get_task_list = {
+    .uri      = "/task_list",
+    .method   = HTTP_GET,
+    .handler  = http_get_task_list_handler,
     .user_ctx = NULL
 };
 
@@ -457,6 +480,7 @@ httpd_handle_t start_webserver(app_config_t *config)
         httpd_register_uri_handler(server, &put_config_uri);
         httpd_register_uri_handler(server, &ws_uri);
         httpd_register_uri_handler(server, &get_wifi_scan_uri);
+        httpd_register_uri_handler(server, &get_task_list);
         #ifdef LUA_INTERPRETER
         httpd_register_uri_handler(server, &get_lua_list_uri);
         httpd_register_uri_handler(server, &post_lua_run_uri);
