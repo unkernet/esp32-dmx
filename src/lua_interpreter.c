@@ -75,17 +75,21 @@ static void lua_kill_hook(lua_State *L, lua_Debug *ar) {
 }
 
 void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
-    if (universe == listen_universe) {
-        if (xSemaphoreTake(dmx_data_sem, 0) == pdTRUE) {
-            dmx_buffer_len = (length > MAX_DATA_LEN) ? MAX_DATA_LEN : length;
-            memcpy(dmx_buffer, data, dmx_buffer_len);
-            buffered_universe = universe;
-            xSemaphoreGive(dmx_data_sem);
-            TaskHandle_t task_handle = lua_task_handle;
-            if (task_handle) {
-                xTaskNotifyGiveIndexed(task_handle, DATA_NOTIFY);
-            }
-        }
+    if (universe != listen_universe) {
+        return;
+    }
+
+    TaskHandle_t task = lua_task_handle;
+    if (task == NULL) {
+        return;
+    }
+
+    if (xSemaphoreTake(dmx_data_sem, 0) == pdTRUE) {
+        dmx_buffer_len = (length > MAX_DATA_LEN) ? MAX_DATA_LEN : length;
+        memcpy(dmx_buffer, data, dmx_buffer_len);
+        buffered_universe = universe;
+        xSemaphoreGive(dmx_data_sem);
+        xTaskNotifyGiveIndexed(task, DATA_NOTIFY);
     }
 }
 

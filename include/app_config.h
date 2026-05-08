@@ -1,13 +1,21 @@
+/**
+ * @file app_config.h
+ * @brief Global application configuration structures and definitions.
+ */
+
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
 #include <stdint.h>
 #include <stdbool.h>
 
-// Define maximum lengths for string fields
+/** @brief Maximum length for SSID strings */
 #define MAX_SSID_LEN 32
+/** @brief Maximum length for password strings */
 #define MAX_PASSWORD_LEN 64
 
+/** @name Module Enable Flags */
+/** @{ */
 #define MOD_EN_DMX_IN      (1<<0)
 #define MOD_EN_DMX_OUT     (1<<1)
 #define MOD_EN_ARTNET_OUT  (1<<2)
@@ -16,7 +24,11 @@
 #define MOD_EN_ESPNOW      (1<<5)
 #define MOD_EN_DMX_2_IN      (1<<6)
 #define MOD_EN_DMX_2_OUT     (1<<7)
+/** @} */
 
+/**
+ * @brief WiFi connection states
+ */
 typedef enum {
     WIFI_STATE_STA_CONNECTING,
     WIFI_STATE_STA_CONNECTED,
@@ -25,9 +37,10 @@ typedef enum {
     WIFI_STATE_WAIT_RECONNECT,
 } wifi_state_t;
 
-// Configuration structure
+/**
+ * @brief Application configuration structure
+ */
 typedef struct __attribute__((packed)) {
-    // Station (STA) mode settings
     char sta_ssid[MAX_SSID_LEN + 1];
     char sta_password[MAX_PASSWORD_LEN + 1];
     uint8_t sta_dhcp_enabled;
@@ -64,7 +77,10 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved_1[4];
 } app_config_t;
 
-// Function to get default configuration
+/**
+ * @brief Initialize configuration with default values.
+ * @param[out] config Pointer to the configuration structure to populate.
+ */
 void app_config_get_default(app_config_t *config);
 
 #endif // APP_CONFIG_H
