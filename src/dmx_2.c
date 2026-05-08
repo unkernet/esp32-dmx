@@ -29,9 +29,11 @@ esp_err_t dmx_2_init(app_config_t *config)
 {
     #ifdef DMX_2_EN
     gpio_set_direction(DMX_2_EN, GPIO_MODE_OUTPUT);
-    gpio_set_level(DMX_2_EN, 0);
     #endif
     if ((config->enabled_modules & (MOD_EN_DMX_2_IN | MOD_EN_DMX_2_OUT)) == 0) {
+        #ifdef DMX_2_EN
+        gpio_set_level(DMX_2_EN, 0);
+        #endif
         ESP_LOGI(TAG, "disabled");
         return ESP_OK;
     }
@@ -53,10 +55,11 @@ esp_err_t dmx_2_init(app_config_t *config)
     dmx_cfg->enabled = ((app_config->enabled_modules & MOD_EN_DMX_2_IN) ? 1 : 0) +
         ((app_config->enabled_modules & MOD_EN_DMX_2_OUT) ? 2 : 0);
 
+    dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
+
     #ifdef DMX_2_EN
     gpio_set_level(DMX_2_EN, 1);
     #endif
-    dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
 
     return ESP_OK;
 }

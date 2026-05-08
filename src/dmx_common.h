@@ -29,15 +29,9 @@ typedef struct {
     dmx_data_source_t source;
     const char *instance_name;
     TaskHandle_t tx_task;
-    TaskHandle_t consumer_task;
     dmx_frame_t dmx_tx_buf;
-    dmx_frame_t dmx_rx_buf;
-    uint8_t tx_data_cache[DMX_BUF_SIZE];
-    size_t tx_data_len_cache;
     SemaphoreHandle_t tx_sem;
-    SemaphoreHandle_t consumer_sem;
     QueueHandle_t uart_evt_queue;
-    bool dmx_data_was_sent;
 } dmx_config;
 
 void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin);
