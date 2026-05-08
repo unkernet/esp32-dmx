@@ -37,6 +37,7 @@ This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX51
 ## Technical Guidelines
 1. **Streaming Data:** To prevent heap fragmentation, always stream large datasets (file lists, scan results, file contents) using `httpd_resp_send_chunk` instead of allocating large strings.
 2. **Lua Safety:** Never use `vTaskDelete` to kill a Lua task. Use the `should_stop` flag and `lua_sethook` to allow the VM to shut down gracefully and free its own memory via `lua_close`.
-3. **Brotli Compression:** Static web files are stored as `.br` files (Brotli). This provides better compression ratios than Gzip. The server adds the `Content-Encoding: br` header automatically.
+3. **Gzip Compression:** Static web files are stored as `.gz` files (Gzip). The server adds the `Content-Encoding: gzip` header automatically.
 4. **Memory Allocation (Heap vs Stack):** For buffers (like the 1024-byte streaming chunk), prefer `malloc` over stack allocation (`char buf[1024]`). The HTTP server tasks have limited stack space (typically 4KB); allocating large arrays on the stack can easily trigger a stack overflow.
 5. **Configuration:** The `app_config_t` struct is the source of truth for all modules. Changes usually require a restart.
+6. **Routing Performance:** All functions called from `route_dmx_data` (`src/router.c`) MUST be as fast as possible and minimize stack usage. These functions are executed within high-priority timing-critical tasks (like the UART RX task or Art-Net processing). Avoid blocking locks, heavy calculations, or large stack allocations. If a module requires complex processing, offload it to a dedicated task (see the WebSocket implementation in `src/web_server.c` as a reference).
