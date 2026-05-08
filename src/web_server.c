@@ -18,7 +18,7 @@
 #include "lua_interpreter.h"
 #endif
 
-#define MAX_WS_CLIENTS 4
+#define MAX_DATA_SIZE 512
 
 typedef struct {
     httpd_handle_t handle;
@@ -30,6 +30,30 @@ static const char *TAG = "WEB_SERVER";
 
 static ws_client_info_t active_ws_client = { .handle = NULL, .fd = -1, .active = false };
 static SemaphoreHandle_t ws_mutex = NULL;
+
+static uint8_t ws_tx_buf[MAX_DATA_SIZE + 2];
+static size_t ws_tx_len = 0;
+static TaskHandle_t ws_send_task_handle = NULL;
+static SemaphoreHandle_t ws_buffer_sem = NULL;
+
+static void ws_send_task(void *arg) {
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        xSemaphoreTake(ws_buffer_sem, portMAX_DELAY);
+        xSemaphoreTake(ws_mutex, portMAX_DELAY);
+        if (active_ws_client.active) {
+            httpd_ws_frame_t ws_pkt = {
+                .payload = ws_tx_buf,
+                .len = ws_tx_len,
+                .type = HTTPD_WS_TYPE_BINARY
+            };
+            httpd_ws_send_frame_async(active_ws_client.handle, active_ws_client.fd, &ws_pkt);
+        }
+        xSemaphoreGive(ws_mutex);
+        xSemaphoreGive(ws_buffer_sem);
+    }
+}
 
 extern void esp_restart(void);
 extern app_config_t app_config; // Declare global app_config from main.c
@@ -466,6 +490,10 @@ httpd_handle_t start_webserver(app_config_t *config)
 {
     global_web_config = config; // Store the config pointer
     ws_mutex = xSemaphoreCreateMutex();
+    ws_buffer_sem = xSemaphoreCreateBinary();
+    xSemaphoreGive(ws_buffer_sem);
+
+    xTaskCreate(ws_send_task, "ws_send_task", 2048, NULL, 5, &ws_send_task_handle);
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
@@ -493,26 +521,22 @@ httpd_handle_t start_webserver(app_config_t *config)
 }
 
 void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (length > 512) {
-        length = 512;
+    if (xSemaphoreTake(ws_mutex, 0) == pdTRUE) {
+        bool active = active_ws_client.active;
+        xSemaphoreGive(ws_mutex);
+        if (!active) return;
+    } else {
+        return;
     }
 
-    if (xSemaphoreTake(ws_mutex, 0) != pdTRUE) {
-        return; // Failed to get lock
+    if (xSemaphoreTake(ws_buffer_sem, 0) == pdTRUE) {
+        if (length > MAX_DATA_SIZE) length = MAX_DATA_SIZE;
+        ws_tx_buf[0] = universe & 0xff;
+        ws_tx_buf[1] = universe >> 8;
+        memcpy(ws_tx_buf + 2, data, length);
+        ws_tx_len = length + 2;
+
+        xSemaphoreGive(ws_buffer_sem);
+        xTaskNotifyGive(ws_send_task_handle);
     }
-
-    if (active_ws_client.active) {
-        uint8_t buf[514];
-        buf[0] = universe & 0xff;
-        buf[1] = universe >> 8;
-        memcpy(buf + 2, data, length);
-
-        httpd_ws_frame_t ws_pkt;
-        ws_pkt.payload = buf;
-        ws_pkt.len = length + 2;
-        ws_pkt.type = HTTPD_WS_TYPE_BINARY;
-
-        httpd_ws_send_frame_async(active_ws_client.handle, active_ws_client.fd, &ws_pkt);
-    }
-    xSemaphoreGive(ws_mutex);
 }
