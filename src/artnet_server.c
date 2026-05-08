@@ -264,34 +264,29 @@ esp_err_t start_artnet_server(app_config_t *config) {
 }
 
 void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if ((app_config->enabled_modules & MOD_EN_ARTNET_OUT) == 0) {
-        return;
-    }
-    if (xSemaphoreTake(tx_sem, (TickType_t)0) != pdTRUE) {
+    if (app_config == NULL || !(app_config->enabled_modules & MOD_EN_ARTNET_OUT)) {
         return;
     }
 
-    if (++sequence == 0) {
-        sequence = 1;
+    if (xSemaphoreTake(tx_sem, 0) != pdTRUE) {
+        return;
     }
 
-    if (length > 512) {
-        length = 512;
-    }
+    if (++sequence == 0) sequence = 1;
+    if (length > 512) length = 512;
 
-    artdmx_packet_t *reply = (artdmx_packet_t *)tx_packet.buffer;
+    artdmx_packet_t *pkt = (artdmx_packet_t *)tx_packet.buffer;
 
-    memcpy(reply->header.id, ARTNET_ID, ARTNET_ID_LENGTH);
-    reply->header.opcode = ARTNET_OP_DMX;
-    reply->header.prot_ver = htons(14);
-    reply->sequence = sequence;
-    reply->physical = 0;
-    reply->universe = universe;
-    reply->length = htons(length);
-    memcpy(reply->data, data, length);
+    memcpy(pkt->header.id, ARTNET_ID, ARTNET_ID_LENGTH);
+    pkt->header.opcode = ARTNET_OP_DMX;
+    pkt->header.prot_ver = htons(14);
+    pkt->sequence = sequence;
+    pkt->physical = 0;
+    pkt->universe = universe;
+    pkt->length = htons(length);
+    memcpy(pkt->data, data, length);
 
     tx_packet.len = sizeof(artdmx_packet_t) - (512 - length);
-    memset(&tx_packet.addr, 0, sizeof(tx_packet.addr));
     tx_packet.addr.sin_family = AF_INET;
     tx_packet.addr.sin_port = htons(ARTNET_PORT);
     tx_packet.addr.sin_addr.s_addr = g_broadcast_addr;
