@@ -375,26 +375,33 @@ esp_err_t ambitful_ble_init(app_config_t *config)
 }
 
 void send_ambitful_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (app_config == NULL) {
+    if (app_config == NULL || app_config->ambitful_universe != universe) {
         return;
     }
-    uint8_t ambitful_groups = app_config->ambitful_groups;
-    uint16_t ambitful_addr = app_config->ambitful_addr;
-    if (app_config->ambitful_universe != universe || length < (uint16_t)(ambitful_addr + ambitful_groups * AMBITFUL_SIZE)) {
+
+    const uint8_t groups = app_config->ambitful_groups;
+    const uint16_t addr = app_config->ambitful_addr;
+
+    if (length < addr + (groups * AMBITFUL_SIZE)) {
         return;
     }
-    if (xSemaphoreTake(s_ble_data_mutex, (TickType_t)0) != pdTRUE) {
+
+    if (xSemaphoreTake(s_ble_data_mutex, 0) != pdTRUE) {
         return;
     }
-    data += ambitful_addr;
+
+    const uint8_t *src = data + addr;
+    uint8_t *dst = ambitful_data;
     uint8_t changed = 0;
-    for (uint8_t i = 0; i < ambitful_groups; i++) {
-        if (memcmp(ambitful_data + i * AMBITFUL_SIZE, data + i * AMBITFUL_SIZE, AMBITFUL_SIZE) != 0) {
-            memcpy(ambitful_data + i * AMBITFUL_SIZE, data + i * AMBITFUL_SIZE, AMBITFUL_SIZE);
+
+    for (uint8_t i = 0; i < groups; i++, src += AMBITFUL_SIZE, dst += AMBITFUL_SIZE) {
+        if (memcmp(dst, src, AMBITFUL_SIZE) != 0) {
+            memcpy(dst, src, AMBITFUL_SIZE);
             groups_priority[i] = MAX_AMBITFUL_PRIORITY;
             changed = 1;
         }
     }
+
     if (changed) {
         increment_counter();
         if (ambitful_idle_mode) {
