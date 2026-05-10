@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include "esp_mac.h"
+#include "app_config.h"
 
 extern uint32_t g_ip_addr;
 
@@ -17,21 +18,9 @@ esp_err_t start_mdns() {
         return err;
     }
     snprintf(hostname, sizeof(hostname), "esp-dmx-%02x%02x", mac[4], mac[5]);
-    err = mdns_init();
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = mdns_hostname_set(hostname);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = mdns_delegate_hostname_add("esp-dmx", &ip_addr);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = mdns_service_add("esp-dmx", "_http", "_tcp", 80, NULL, 0);
-    if (err != ESP_OK) {
-        return err;
-    }
+    RETURN_ON_ERROR(mdns_init());
+    RETURN_ON_ERROR(mdns_hostname_set(hostname));
+    RETURN_ON_ERROR(mdns_delegate_hostname_add("esp-dmx", &ip_addr));
+    RETURN_ON_ERROR(mdns_service_add("esp-dmx", "_http", "_tcp", 80, NULL, 0));
     return ESP_OK;
 }

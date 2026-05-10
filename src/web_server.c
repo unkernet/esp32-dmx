@@ -183,7 +183,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     }
 
     httpd_resp_send(req, NULL, 0);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
 
     return ESP_OK;
@@ -487,17 +487,12 @@ void httpd_close_cb(httpd_handle_t hd, int sockfd)
 
 esp_err_t start_webserver(app_config_t *config)
 {
-    ws_mutex = xSemaphoreCreateMutex();
-    ws_buffer_sem = xSemaphoreCreateBinary();
-    if (!ws_mutex || !ws_buffer_sem) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(ws_mutex = xSemaphoreCreateMutex(), ESP_ERR_NO_MEM);
+    RETURN_ON_NULL(ws_buffer_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(ws_buffer_sem);
 
     xTaskCreate(ws_send_task, "ws_send_task", 2048, NULL, 5, &ws_send_task_handle);
-    if (!ws_send_task_handle) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(ws_send_task_handle, ESP_ERR_NO_MEM);
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
@@ -505,10 +500,7 @@ esp_err_t start_webserver(app_config_t *config)
     httpd_cfg.uri_match_fn = httpd_uri_match_wildcard; // Enable wildcard matching if needed
     httpd_cfg.close_fn = httpd_close_cb;
 
-    esp_err_t err = httpd_start(&server, &httpd_cfg);
-    if (err != ESP_OK) {
-        return err;
-    }
+    RETURN_ON_ERROR(httpd_start(&server, &httpd_cfg));
 
     httpd_register_uri_handler(server, &get_root_uri);
     httpd_register_uri_handler(server, &get_js_uri);

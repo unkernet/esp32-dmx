@@ -38,11 +38,7 @@ esp_err_t dmx_init(app_config_t *config)
         return ESP_OK;
     }
 
-    dmx_cfg = malloc(sizeof(dmx_config));
-    if (!dmx_cfg) {
-        ESP_LOGE(TAG, "Failed to allocate memory");
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(dmx_cfg = malloc(sizeof(dmx_config)), ESP_ERR_NO_MEM);
     memset(dmx_cfg, 0, sizeof(dmx_config));
 
     dmx_cfg->uart_num = DMX_UART_NUM;
@@ -51,14 +47,10 @@ esp_err_t dmx_init(app_config_t *config)
     dmx_cfg->in_universe = config->dmx_in_universe;
     dmx_cfg->out_universe = config->dmx_out_universe;
     dmx_cfg->repeat_interval = config->dmx_repeat_interval;
-    dmx_cfg->enabled = ((config->enabled_modules & MOD_EN_DMX_IN) ? 1 : 0) +
-        ((config->enabled_modules & MOD_EN_DMX_OUT) ? 2 : 0);
+    dmx_cfg->enabled = ((config->enabled_modules & MOD_EN_DMX_IN) ? MOD_EN_DMX_IN : 0) |
+        ((config->enabled_modules & MOD_EN_DMX_OUT) ? MOD_EN_DMX_OUT : 0);
 
-    esp_err_t err = dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "failed to start: %d", err);
-        return err;
-    }
+    RETURN_ON_ERROR(dmx_init_common(dmx_cfg, DMX_TX_PIN, DMX_RX_PIN));
 
     #ifdef DMX_EN
     gpio_set_level(DMX_EN, 1);

@@ -83,4 +83,24 @@ typedef struct __attribute__((packed)) {
  */
 void app_config_get_default(app_config_t *config);
 
+#define RETURN_ON_ERROR(x) do {        \
+    esp_err_t err_rc_ = (x);           \
+    if (unlikely(err_rc_ != ESP_OK)) { \
+        return err_rc_;                \
+    }                                  \
+} while(0)
+
+#define RETURN_ON_NULL(ptr, err_code) do { \
+    if (unlikely(!(ptr))) { \
+        return (err_code); \
+    } \
+} while(0)
+
+#define LOG_ON_ERROR(x, log_tag, format) do { \
+    esp_err_t err_rc_ = (x); \
+    if (unlikely(err_rc_ != ESP_OK)) { \
+        ESP_LOGE(log_tag, format ": %d", err_rc_); \
+    } \
+} while(0)
+
 #endif // APP_CONFIG_H

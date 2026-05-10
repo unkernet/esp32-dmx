@@ -66,11 +66,7 @@ esp_err_t ws2812_init(app_config_t *config) {
         return ESP_OK; // Disabled
     }
 
-    tx_data = malloc(MAX_DATA_LEN);
-    if (!tx_data) {
-        ESP_LOGE(TAG, "Failed to allocate memory");
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(tx_data = malloc(MAX_DATA_LEN), ESP_ERR_NO_MEM);
 
     rmt_tx_channel_config_t tx_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -80,10 +76,7 @@ esp_err_t ws2812_init(app_config_t *config) {
         .trans_queue_depth = 4,
     };
 
-    esp_err_t err = rmt_new_tx_channel(&tx_cfg, &rmt_chan);
-    if (err != ESP_OK) {
-        return err;
-    }
+    RETURN_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &rmt_chan));
 
     rmt_bytes_encoder_config_t enc_cfg = {
         .bit0 = {
@@ -100,24 +93,13 @@ esp_err_t ws2812_init(app_config_t *config) {
         },
         .flags.msb_first = 1,
     };
-    err = rmt_new_bytes_encoder(&enc_cfg, &bytes_encoder);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = rmt_enable(rmt_chan);
-    if (err != ESP_OK) {
-        return err;
-    }
+    RETURN_ON_ERROR(rmt_new_bytes_encoder(&enc_cfg, &bytes_encoder));
+    RETURN_ON_ERROR(rmt_enable(rmt_chan));
 
-    tx_sem = xSemaphoreCreateBinary();
-    if (!tx_sem) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(tx_sem);
     xTaskCreate(ws2812_tx_task, "ws2812_tx", 1024, NULL, 7, &tx_task);
-    if (!tx_task) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(tx_task, ESP_ERR_NO_MEM);
 
     app_config = config;
 

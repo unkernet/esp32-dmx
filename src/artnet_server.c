@@ -6,6 +6,7 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "artnet_server.h"
+#include "app_config.h"
 #include "esp_netif.h"
 #include "router.h"
 #include "freertos/semphr.h"
@@ -228,10 +229,7 @@ static void artnet_server_task(void *pvParameters)
 }
 
 esp_err_t start_artnet_server(app_config_t *config) {
-    tx_sem = xSemaphoreCreateBinary();
-    if (tx_sem == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(tx_sem);
 
     struct sockaddr_in dest_addr = {
@@ -255,11 +253,9 @@ esp_err_t start_artnet_server(app_config_t *config) {
     }
 
     xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 7, &srv_task);
+    RETURN_ON_NULL(srv_task, ESP_ERR_NO_MEM);
     xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
-
-    if (!srv_task || !send_task) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(send_task, ESP_ERR_NO_MEM);
 
     app_config = config;
     return ESP_OK;

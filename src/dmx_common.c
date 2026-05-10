@@ -1,3 +1,4 @@
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -6,8 +7,8 @@
 #include "esp_log.h"
 #include "dmx_common.h"
 #include "hardware_config.h"
-#include <string.h>
 #include "router.h"
+#include "app_config.h"
 
 #define DMX_RTS_PIN       UART_PIN_NO_CHANGE
 #define DMX_BREAK_BITS    23 // 23 * 4 us = 92 us
@@ -188,44 +189,28 @@ esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
     };
 
     esp_err_t err;
-    err = uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = uart_param_config(cfg->uart_num, &uart_cfg);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = art_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    cfg->tx_sem = xSemaphoreCreateBinary();
-    if (!cfg->tx_sem) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_ERROR(uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3));
+    RETURN_ON_ERROR(uart_param_config(cfg->uart_num, &uart_cfg));
+    RETURN_ON_ERROR(uart_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE));
+    RETURN_ON_NULL(cfg->tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(cfg->tx_sem);
 
-    if ((cfg->enabled & 1) != 0) {
-        TaskHandle_t dmx_rx_task;
-        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, &dmx_rx_task);
-        if (!dmx_rx_task) {
-            return ESP_ERR_NO_MEM;
-        }
+    if ((cfg->enabled & MOD_EN_DMX_IN) != 0) {
+        TaskHandle_t dmx_rx_task_handle;
+        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, &dmx_rx_task_handle);
+        RETURN_ON_NULL(dmx_rx_task_handle, ESP_ERR_NO_MEM);
     } else {
         ESP_LOGI(cfg->instance_name, "rx disabled");
     }
-    if ((cfg->enabled & 2) != 0) {
-        if (cfg->repeat_interval < 1) {
+    if ((cfg->enabled & MOD_EN_DMX_OUT) != 0) {
+        if (cfg->repeat_interval == 0) {
             cfg->repeat_interval = 1;
         }
         xTaskCreate(dmx_tx_task, "dmx_tx", 2048, cfg, 5, &cfg->tx_task);
-        if (cfg->tx_task) {
-            return ESP_ERR_NO_MEM;
-        }
+        RETURN_ON_NULL(cfg->tx_task, ESP_ERR_NO_MEM);
     } else {
         ESP_LOGI(cfg->instance_name, "tx disabled");
     }
     return ESP_OK;
 }
+

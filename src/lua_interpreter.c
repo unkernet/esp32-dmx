@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
+#include "app_config.h"
 #include "router.h"
 #include "esp_random.h"
 #include <dirent.h>
@@ -182,8 +183,7 @@ static void lua_task(void *pvParameters) {
 
 esp_err_t lua_interpreter_init(void) {
     if (dmx_data_sem == NULL) {
-        dmx_data_sem = xSemaphoreCreateBinary();
-        if (dmx_data_sem == NULL) return ESP_ERR_NO_MEM;
+        RETURN_ON_NULL(dmx_data_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
         xSemaphoreGive(dmx_data_sem);
     }
 
@@ -197,9 +197,7 @@ esp_err_t lua_interpreter_init(void) {
 esp_err_t lua_interpreter_run(const char *filename) {
     if (!dmx_buffer) {
         // Allocate memory on first run
-        if (!(dmx_buffer = malloc(MAX_DATA_LEN))) {
-            return ESP_ERR_NO_MEM;
-        }
+        RETURN_ON_NULL(dmx_buffer = malloc(MAX_DATA_LEN), ESP_ERR_NO_MEM);
         if (!(last_error = malloc(ERROR_LEN))) {
             free(dmx_buffer);
             dmx_buffer = NULL;
@@ -225,7 +223,7 @@ esp_err_t lua_interpreter_run(const char *filename) {
     xTaskCreate(lua_task, "lua_task", 8192, NULL, 5, &lua_task_handle);
     if (lua_task_handle == NULL) {
         current_script[0] = '\0';
-        return ESP_FAIL;
+        return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
 }

@@ -17,9 +17,7 @@ esp_err_t app_config_nvs_init(void) {
 }
 
 esp_err_t app_config_load(app_config_t *config) {
-    if (config == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
+    RETURN_ON_NULL(config, ESP_ERR_INVALID_ARG);
 
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);

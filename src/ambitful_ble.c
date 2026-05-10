@@ -353,7 +353,7 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     }
     memset(groups_priority, 0, sizeof(groups_priority));
     memset(ambitful_data, 0, sizeof(ambitful_data));
-    esp_read_mac(ble_addr, ESP_MAC_WIFI_STA);
+    RETURN_ON_ERROR(esp_read_mac(ble_addr, ESP_MAC_WIFI_STA));
     for (uint8_t i = 0; i < 3; i++) {
         // Reverse MAC address for BLE
         ble_addr[i] ^= ble_addr[5 - i];
@@ -361,16 +361,11 @@ esp_err_t ambitful_ble_init(app_config_t *config)
         ble_addr[i] ^= ble_addr[5 - i];
     }
     ble_addr[5] &= 0x3f; // Non-Resolvable Private Address (NRPA)
-    s_ble_data_mutex = xSemaphoreCreateMutex();
+    RETURN_ON_NULL(s_ble_data_mutex = xSemaphoreCreateMutex(), ESP_ERR_NO_MEM);
     xTaskCreate(restart_advertise_task, "ble_adv", 2048, NULL, 5, &advertise_task);
-    if (!s_ble_data_mutex || !advertise_task) {
-        return ESP_ERR_NO_MEM;
-    }
+    RETURN_ON_NULL(advertise_task, ESP_ERR_NO_MEM);
 
-    esp_err_t err = nimble_port_init();
-    if (err != ESP_OK) {
-        return err;
-    }
+    RETURN_ON_ERROR(nimble_port_init());
 
     ble_hs_cfg.sync_cb = ble_app_on_sync;
 

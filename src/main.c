@@ -68,27 +68,17 @@ void app_main() {
         return;
     }
 
-    
-    if ((err = wifi_manager_init(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "wifi_manager_init failed: %d", err); 
-    if ((err = ambitful_ble_init(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "ambitful_ble_init failed: %d", err);
-    if ((err = dmx_init(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "dmx_init failed: %d", err);
+    LOG_ON_ERROR(wifi_manager_init(&app_config), TAG, "wifi_manager_init failed");
+    LOG_ON_ERROR(ambitful_ble_init(&app_config), TAG, "ambitful_ble_init failed");
+    LOG_ON_ERROR(dmx_init(&app_config), TAG, "dmx_init failed");
     #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
-    if ((err = dmx_2_init(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "dmx_2_init failed: %d", err);
+    LOG_ON_ERROR(dmx_2_init(&app_config), TAG, "dmx_2_init failed");
     #endif
-    if ((err = ws2812_init(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "ws2812_init failed: %d", err);
-    if ((err = start_webserver(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "start_webserver failed: %d", err);
-    if ((err = start_artnet_server(&app_config)) != ESP_OK)
-        ESP_LOGE(TAG, "start_artnet_server failed: %d", err);
-    if ((err = start_mdns()) != ESP_OK)
-        ESP_LOGE(TAG, "start_mdns failed: %d", err);
+    LOG_ON_ERROR(ws2812_init(&app_config), TAG, "ws2812_init failed");
+    LOG_ON_ERROR(start_webserver(&app_config), TAG, "start_webserver failed");
+    LOG_ON_ERROR(start_artnet_server(&app_config), TAG, "start_artnet_server failed");
+    LOG_ON_ERROR(start_mdns(), TAG, "start_mdns failed");
     #ifdef LUA_INTERPRETER
-    if ((err = lua_interpreter_init()) != ESP_OK)
-        ESP_LOGE(TAG, "lua_interpreter_init failed: %d", err);
+    LOG_ON_ERROR(lua_interpreter_init(), TAG, "lua_interpreter_init failed");
     #endif
 }
