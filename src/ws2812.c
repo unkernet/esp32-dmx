@@ -71,7 +71,6 @@ esp_err_t ws2812_init(app_config_t *config) {
         ESP_LOGE(TAG, "Failed to allocate memory");
         return ESP_ERR_NO_MEM;
     }
-    app_config = config;
 
     rmt_tx_channel_config_t tx_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -104,6 +103,8 @@ esp_err_t ws2812_init(app_config_t *config) {
     tx_sem = xSemaphoreCreateBinary();
     xSemaphoreGive(tx_sem);
     xTaskCreate(ws2812_tx_task, "ws2812_tx", 1024, NULL, 7, &tx_task);
+
+    app_config = config;
 
     return ESP_OK;
 }

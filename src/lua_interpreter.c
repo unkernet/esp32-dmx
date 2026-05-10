@@ -181,8 +181,11 @@ static void lua_task(void *pvParameters) {
 }
 
 esp_err_t lua_interpreter_init(void) {
-    dmx_data_sem = xSemaphoreCreateBinary();
-    xSemaphoreGive(dmx_data_sem);
+    if (dmx_data_sem == NULL) {
+        dmx_data_sem = xSemaphoreCreateBinary();
+        if (dmx_data_sem == NULL) return ESP_ERR_NO_MEM;
+        xSemaphoreGive(dmx_data_sem);
+    }
 
     struct stat st;
     if (stat("/spiffs/init.lua", &st) == 0) {

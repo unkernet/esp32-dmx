@@ -351,7 +351,6 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= 512) {
         return ESP_OK; // Invalid configuration,
     }
-    app_config = config; // Store config globally
     memset(groups_priority, 0, sizeof(groups_priority));
     memset(ambitful_data, 0, sizeof(ambitful_data));
     esp_read_mac(ble_addr, ESP_MAC_WIFI_STA);
@@ -370,6 +369,8 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     ble_hs_cfg.sync_cb = ble_app_on_sync;
 
     nimble_port_freertos_init(ble_beacon_task);
+
+    app_config = config;
 
     return ESP_OK;
 }

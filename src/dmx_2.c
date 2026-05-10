@@ -44,7 +44,6 @@ esp_err_t dmx_2_init(app_config_t *config)
         return ESP_ERR_NO_MEM;
     }
     memset(dmx_cfg, 0, sizeof(dmx_config));
-    app_config = config;
 
     dmx_cfg->uart_num = DMX_2_UART_NUM;
     dmx_cfg->instance_name = TAG;
@@ -52,14 +51,16 @@ esp_err_t dmx_2_init(app_config_t *config)
     dmx_cfg->in_universe = config->dmx_2_in_universe;
     dmx_cfg->out_universe = config->dmx_2_out_universe;
     dmx_cfg->repeat_interval = config->dmx_2_repeat_interval;
-    dmx_cfg->enabled = ((app_config->enabled_modules & MOD_EN_DMX_2_IN) ? 1 : 0) +
-        ((app_config->enabled_modules & MOD_EN_DMX_2_OUT) ? 2 : 0);
+    dmx_cfg->enabled = ((config->enabled_modules & MOD_EN_DMX_2_IN) ? 1 : 0) +
+        ((config->enabled_modules & MOD_EN_DMX_2_OUT) ? 2 : 0);
 
     dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
 
     #ifdef DMX_2_EN
     gpio_set_level(DMX_2_EN, 1);
     #endif
+
+    app_config = config;
 
     return ESP_OK;
 }

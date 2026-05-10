@@ -9,7 +9,7 @@
  * @param config Pointer to the application configuration.
  * @return httpd_handle_t The web server handle, or NULL if failed.
  */
-httpd_handle_t start_webserver(app_config_t *config);
+esp_err_t start_webserver(app_config_t *config);
 
 /**
  * @brief Send DMX data via WebSocket to the active client.

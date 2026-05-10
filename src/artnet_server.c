@@ -228,8 +228,6 @@ static void artnet_server_task(void *pvParameters)
 }
 
 esp_err_t start_artnet_server(app_config_t *config) {
-    app_config = config;
-
     tx_sem = xSemaphoreCreateBinary();
     if (tx_sem == NULL) {
         ESP_LOGE(TAG, "Failed to create DMX data mutex");
@@ -256,10 +254,15 @@ esp_err_t start_artnet_server(app_config_t *config) {
     if (err < 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
     }
-    ESP_LOGI(TAG, "Socket bound, port %d", ARTNET_PORT);
 
     xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 7, &srv_task);
     xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
+
+    if (!srv_task || !send_task) {
+        return ESP_FAIL;
+    }
+
+    app_config = config;
     return ESP_OK;
 }
 

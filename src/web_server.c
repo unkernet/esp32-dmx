@@ -56,9 +56,7 @@ static void ws_send_task(void *arg) {
 }
 
 extern void esp_restart(void);
-extern app_config_t app_config; // Declare global app_config from main.c
-
-static app_config_t *global_web_config; // Pointer to the global configuration
+static app_config_t *app_config; // Pointer to the global configuration
 
 // Helper to check if a file exists and get its size
 static esp_err_t get_file_info(const char *filepath, struct stat *st) {
@@ -144,19 +142,19 @@ static esp_err_t serve_static_file(httpd_req_t *req)
 
 static esp_err_t http_get_config_handler(httpd_req_t *req)
 {
-    if (global_web_config == NULL) {
+    if (app_config == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Config not available");
         return ESP_FAIL;
     }
 
     httpd_resp_set_type(req, "application/octet-stream");
-    httpd_resp_send(req, (const char*)global_web_config, sizeof(app_config_t));
+    httpd_resp_send(req, (const char*)app_config, sizeof(app_config_t));
     return ESP_OK;
 }
 
 static esp_err_t http_put_config_handler(httpd_req_t *req)
 {
-    if (global_web_config == NULL) {
+    if (app_config == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Config not available");
         return ESP_FAIL;
     }
@@ -166,7 +164,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    int ret = httpd_req_recv(req, (char*)global_web_config, req->content_len);
+    int ret = httpd_req_recv(req, (char*)app_config, req->content_len);
     if (ret <= 0) {
         if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
             httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timed out");
@@ -177,7 +175,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     }
 
     ESP_LOGI(TAG, "Received new configuration. Saving and restarting...");
-    esp_err_t err = app_config_save(global_web_config);
+    esp_err_t err = app_config_save(app_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save configuration: %s", esp_err_to_name(err));
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save config");
@@ -486,9 +484,8 @@ void httpd_close_cb(httpd_handle_t hd, int sockfd)
     remove_ws_client(sockfd);
 }
 
-httpd_handle_t start_webserver(app_config_t *config)
+esp_err_t start_webserver(app_config_t *config)
 {
-    global_web_config = config; // Store the config pointer
     ws_mutex = xSemaphoreCreateMutex();
     ws_buffer_sem = xSemaphoreCreateBinary();
     xSemaphoreGive(ws_buffer_sem);
@@ -501,26 +498,33 @@ httpd_handle_t start_webserver(app_config_t *config)
     httpd_cfg.uri_match_fn = httpd_uri_match_wildcard; // Enable wildcard matching if needed
     httpd_cfg.close_fn = httpd_close_cb;
 
-    if (httpd_start(&server, &httpd_cfg) == ESP_OK) {
-        httpd_register_uri_handler(server, &get_root_uri);
-        httpd_register_uri_handler(server, &get_js_uri);
-        httpd_register_uri_handler(server, &get_config_uri);
-        httpd_register_uri_handler(server, &put_config_uri);
-        httpd_register_uri_handler(server, &ws_uri);
-        httpd_register_uri_handler(server, &get_wifi_scan_uri);
-        httpd_register_uri_handler(server, &get_task_list);
-        #ifdef LUA_INTERPRETER
-        httpd_register_uri_handler(server, &get_lua_list_uri);
-        httpd_register_uri_handler(server, &post_lua_run_uri);
-        httpd_register_uri_handler(server, &post_lua_kill_uri);
-        httpd_register_uri_handler(server, &get_lua_script_uri);
-        httpd_register_uri_handler(server, &put_lua_script_uri);
-        #endif
+    esp_err_t err = httpd_start(&server, &httpd_cfg);
+    if (err != ESP_OK || !ws_send_task_handle) {
+        return err;
     }
-    return server;
+
+    httpd_register_uri_handler(server, &get_root_uri);
+    httpd_register_uri_handler(server, &get_js_uri);
+    httpd_register_uri_handler(server, &get_config_uri);
+    httpd_register_uri_handler(server, &put_config_uri);
+    httpd_register_uri_handler(server, &ws_uri);
+    httpd_register_uri_handler(server, &get_wifi_scan_uri);
+    httpd_register_uri_handler(server, &get_task_list);
+    #ifdef LUA_INTERPRETER
+    httpd_register_uri_handler(server, &get_lua_list_uri);
+    httpd_register_uri_handler(server, &post_lua_run_uri);
+    httpd_register_uri_handler(server, &post_lua_kill_uri);
+    httpd_register_uri_handler(server, &get_lua_script_uri);
+    httpd_register_uri_handler(server, &put_lua_script_uri);
+    #endif
+
+    app_config = config;
+    return ESP_OK;
 }
 
 void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
+    if (!app_config) return;
+
     if (xSemaphoreTake(ws_mutex, 0) == pdTRUE) {
         bool active = active_ws_client.active;
         xSemaphoreGive(ws_mutex);
