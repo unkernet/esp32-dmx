@@ -346,9 +346,7 @@ static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
 
     esp_err_t err = lua_interpreter_run(buf);
     if (err == ESP_OK) {
-        httpd_resp_sendstr(req, "Script started");
-    } else if (err == ESP_ERR_INVALID_STATE) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Another script is already running");
+        httpd_resp_send(req, NULL, 0);
     } else {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start script");
     }
@@ -356,8 +354,11 @@ static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
 }
 
 static esp_err_t http_post_lua_kill_handler(httpd_req_t *req) {
-    lua_interpreter_kill();
-    httpd_resp_sendstr(req, "Script stopped");
+    if (lua_interpreter_kill() == ESP_OK) {
+        httpd_resp_send(req, NULL, 0);
+    } else {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Script terminated");
+    }
     return ESP_OK;
 }
 
@@ -439,7 +440,7 @@ static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     fclose(f);
     free(buf);
 
-    httpd_resp_sendstr(req, "File uploaded");
+    httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -488,9 +489,15 @@ esp_err_t start_webserver(app_config_t *config)
 {
     ws_mutex = xSemaphoreCreateMutex();
     ws_buffer_sem = xSemaphoreCreateBinary();
+    if (!ws_mutex || !ws_buffer_sem) {
+        return ESP_ERR_NO_MEM;
+    }
     xSemaphoreGive(ws_buffer_sem);
 
     xTaskCreate(ws_send_task, "ws_send_task", 2048, NULL, 5, &ws_send_task_handle);
+    if (!ws_send_task_handle) {
+        return ESP_ERR_NO_MEM;
+    }
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
@@ -499,7 +506,7 @@ esp_err_t start_webserver(app_config_t *config)
     httpd_cfg.close_fn = httpd_close_cb;
 
     esp_err_t err = httpd_start(&server, &httpd_cfg);
-    if (err != ESP_OK || !ws_send_task_handle) {
+    if (err != ESP_OK) {
         return err;
     }
 

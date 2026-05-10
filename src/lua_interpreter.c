@@ -256,6 +256,7 @@ esp_err_t lua_interpreter_kill(void) {
         lua_task_handle = NULL;
         current_script[0] = '\0';
         listen_universe = EMPTY;
+        return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
 }

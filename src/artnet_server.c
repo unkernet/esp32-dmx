@@ -230,8 +230,7 @@ static void artnet_server_task(void *pvParameters)
 esp_err_t start_artnet_server(app_config_t *config) {
     tx_sem = xSemaphoreCreateBinary();
     if (tx_sem == NULL) {
-        ESP_LOGE(TAG, "Failed to create DMX data mutex");
-        return ESP_FAIL;
+        return ESP_ERR_NO_MEM;
     }
     xSemaphoreGive(tx_sem);
 
@@ -259,7 +258,7 @@ esp_err_t start_artnet_server(app_config_t *config) {
     xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
 
     if (!srv_task || !send_task) {
-        return ESP_FAIL;
+        return ESP_ERR_NO_MEM;
     }
 
     app_config = config;

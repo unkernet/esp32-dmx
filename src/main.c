@@ -55,30 +55,40 @@ void app_main() {
       .format_if_mount_failed = true
     };
     
-    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    err = esp_vfs_spiffs_register(&conf);
 
-    if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
+    if (err != ESP_OK) {
+        if (err == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        } else if (ret == ESP_ERR_NOT_FOUND) {
+        } else if (err == ESP_ERR_NOT_FOUND) {
             ESP_LOGE(TAG, "Failed to find SPIFFS partition");
         } else {
-            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(err));
         }
         return;
     }
 
-    wifi_manager_init(&app_config);
-    ambitful_ble_init(&app_config);
-    dmx_init(&app_config);
+    
+    if ((err = wifi_manager_init(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "wifi_manager_init failed: %d", err); 
+    if ((err = ambitful_ble_init(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "ambitful_ble_init failed: %d", err);
+    if ((err = dmx_init(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "dmx_init failed: %d", err);
     #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
-    dmx_2_init(&app_config);
+    if ((err = dmx_2_init(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "dmx_2_init failed: %d", err);
     #endif
-    ws2812_init(&app_config);
-    start_webserver(&app_config);
-    start_artnet_server(&app_config);
-    start_mdns();
+    if ((err = ws2812_init(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "ws2812_init failed: %d", err);
+    if ((err = start_webserver(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "start_webserver failed: %d", err);
+    if ((err = start_artnet_server(&app_config)) != ESP_OK)
+        ESP_LOGE(TAG, "start_artnet_server failed: %d", err);
+    if ((err = start_mdns()) != ESP_OK)
+        ESP_LOGE(TAG, "start_mdns failed: %d", err);
     #ifdef LUA_INTERPRETER
-    lua_interpreter_init();
+    if ((err = lua_interpreter_init()) != ESP_OK)
+        ESP_LOGE(TAG, "lua_interpreter_init failed: %d", err);
     #endif
 }

@@ -176,7 +176,7 @@ void send_dmx_data_common(dmx_config *cfg, const uint8_t * data, uint16_t length
     xTaskNotifyGive(cfg->tx_task);
 }
 
-void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
+esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
 {
     uart_config_t uart_cfg = {
         .baud_rate  = 250000,
@@ -187,15 +187,32 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
-    uart_param_config(cfg->uart_num, &uart_cfg);
-    uart_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
+    esp_err_t err;
+    err = uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = uart_param_config(cfg->uart_num, &uart_cfg);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = art_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     cfg->tx_sem = xSemaphoreCreateBinary();
+    if (!cfg->tx_sem) {
+        return ESP_ERR_NO_MEM;
+    }
     xSemaphoreGive(cfg->tx_sem);
 
     if ((cfg->enabled & 1) != 0) {
-        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, NULL);
+        TaskHandle_t dmx_rx_task;
+        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, &dmx_rx_task);
+        if (!dmx_rx_task) {
+            return ESP_ERR_NO_MEM;
+        }
     } else {
         ESP_LOGI(cfg->instance_name, "rx disabled");
     }
@@ -204,8 +221,11 @@ void dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
             cfg->repeat_interval = 1;
         }
         xTaskCreate(dmx_tx_task, "dmx_tx", 2048, cfg, 5, &cfg->tx_task);
+        if (cfg->tx_task) {
+            return ESP_ERR_NO_MEM;
+        }
     } else {
         ESP_LOGI(cfg->instance_name, "tx disabled");
     }
-    return;
+    return ESP_OK;
 }

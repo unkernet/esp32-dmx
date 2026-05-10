@@ -342,26 +342,49 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     return ESP_OK;
 }
 
-void wifi_manager_init(app_config_t *config)
+esp_err_t wifi_manager_init(app_config_t *config)
 {
     cfg = config;
 
     led_init();
     wifi_event_group = xEventGroupCreate();
 
-    esp_netif_init();
-    esp_event_loop_create_default();
+    esp_err_t err = esp_netif_init();
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK) {
+        return err;
+    }
 
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
-    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL);
+    err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     sta_netif = esp_netif_create_default_wifi_sta();
     ap_netif  = esp_netif_create_default_wifi_ap();
+    if (!sta_netif || !ap_netif) {
+        return ESP_ERR_WIFI_NOT_INIT;
+    }
 
     wifi_init_config_t wicfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&wicfg);
+    err = esp_wifi_init(&wicfg);
+    if (err != ESP_OK) {
+        return err;
+    }
 
-    xTaskCreate(reconnect_task, "wifi_reconnect", 2048, NULL, 5, NULL);
+    TaskHandle_t reconnect_task_handle;
+    xTaskCreate(reconnect_task, "wifi_reconnect", 2048, NULL, 5, &reconnect_task_handle);
+    if (!reconnect_task_handle) {
+        return ESP_ERR_NO_MEM;
+    }
+
 
     if (strlen(cfg->sta_ssid)) {
         if (!wifi_start_sta()) {
@@ -370,4 +393,6 @@ void wifi_manager_init(app_config_t *config)
     } else {
         wifi_start_ap();
     }
+
+    return ESP_OK;
 }

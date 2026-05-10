@@ -79,7 +79,11 @@ esp_err_t ws2812_init(app_config_t *config) {
         .resolution_hz = 3200000, // 3.2 Mhz
         .trans_queue_depth = 4,
     };
-    ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_cfg, &rmt_chan));
+
+    esp_err_t err = rmt_new_tx_channel(&tx_cfg, &rmt_chan);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     rmt_bytes_encoder_config_t enc_cfg = {
         .bit0 = {
@@ -96,13 +100,24 @@ esp_err_t ws2812_init(app_config_t *config) {
         },
         .flags.msb_first = 1,
     };
-    ESP_ERROR_CHECK(rmt_new_bytes_encoder(&enc_cfg, &bytes_encoder));
-
-    ESP_ERROR_CHECK(rmt_enable(rmt_chan));
+    err = rmt_new_bytes_encoder(&enc_cfg, &bytes_encoder);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = rmt_enable(rmt_chan);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     tx_sem = xSemaphoreCreateBinary();
+    if (!tx_sem) {
+        return ESP_ERR_NO_MEM;
+    }
     xSemaphoreGive(tx_sem);
     xTaskCreate(ws2812_tx_task, "ws2812_tx", 1024, NULL, 7, &tx_task);
+    if (!tx_task) {
+        return ESP_ERR_NO_MEM;
+    }
 
     app_config = config;
 

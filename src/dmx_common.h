@@ -40,7 +40,7 @@ typedef struct {
  * @param tx_pin TX GPIO pin.
  * @param rx_pin RX GPIO pin.
  */
-void dmx_init_common(dmx_config *cfg, uint8_t tx_pin, uint8_t rx_pin);
+esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin, uint8_t rx_pin);
 
 /**
  * @brief Send DMX data on the specified port.

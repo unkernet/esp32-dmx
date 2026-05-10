@@ -54,7 +54,11 @@ esp_err_t dmx_2_init(app_config_t *config)
     dmx_cfg->enabled = ((config->enabled_modules & MOD_EN_DMX_2_IN) ? 1 : 0) +
         ((config->enabled_modules & MOD_EN_DMX_2_OUT) ? 2 : 0);
 
-    dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
+    esp_err_t err = dmx_init_common(dmx_cfg, DMX_2_TX_PIN, DMX_2_RX_PIN);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "failed to start: %d", err);
+        return err;
+    }
 
     #ifdef DMX_2_EN
     gpio_set_level(DMX_2_EN, 1);

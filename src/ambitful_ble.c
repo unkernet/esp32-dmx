@@ -349,7 +349,7 @@ esp_err_t ambitful_ble_init(app_config_t *config)
         config->ambitful_groups = MAX_AMBITFUL_GROUPS;
     }
     if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= 512) {
-        return ESP_OK; // Invalid configuration,
+        return ESP_ERR_INVALID_SIZE; // Invalid configuration
     }
     memset(groups_priority, 0, sizeof(groups_priority));
     memset(ambitful_data, 0, sizeof(ambitful_data));
@@ -363,8 +363,14 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     ble_addr[5] &= 0x3f; // Non-Resolvable Private Address (NRPA)
     s_ble_data_mutex = xSemaphoreCreateMutex();
     xTaskCreate(restart_advertise_task, "ble_adv", 2048, NULL, 5, &advertise_task);
+    if (!s_ble_data_mutex || !advertise_task) {
+        return ESP_ERR_NO_MEM;
+    }
 
-    nimble_port_init();
+    esp_err_t err = nimble_port_init();
+    if (err != ESP_OK) {
+        return err;
+    }
 
     ble_hs_cfg.sync_cb = ble_app_on_sync;
 

@@ -1,6 +1,6 @@
 #ifndef MDNS_H
 #define MDNS_H
 
-void start_mdns();
+esp_err_t start_mdns();
 
 #endif // MDNS_H
