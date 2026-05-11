@@ -4,26 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "rollup -c rollup.config.js && gzip -f ../data/index.js && npx html-minifier-terser --collapse-whitespace --remove-comments index.html | gzip > ../data/index.html.gz",
-    "upload": "cd ..; pio run -t uploadfs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "upload": "cd ..; pio run -t uploadfs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devDependencies": {
-    "@rollup/plugin-commonjs": "^29.0.0",
-    "@rollup/plugin-node-resolve": "^16.0.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "buffer-layout": "^1.2.2",
-    "html-minifier-terser": "^7.2.0",
-    "rollup": "^2.79.2",
-    "rollup-plugin-gzip": "^4.1.1",
-    "rollup-plugin-html": "^0.2.1"
-  },
   "dependencies": {
-    "@rollup/plugin-json": "^6.1.0",
-    "jbinary": "^2.1.5",
-    "rollup-plugin-polyfill-node": "^0.13.0"
+    "@picocss/pico": "^2.1.1",
+    "@preact/signals": "^2.9.0",
+    "lucide-preact": "^1.14.0",
+    "preact": "^10.29.1"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
+    "vite": "^8.0.11",
+    "vite-plugin-compression": "^0.5.1",
+    "vite-plugin-svgr": "^5.2.0",
+    "ws": "^8.20.0"
   }
 }

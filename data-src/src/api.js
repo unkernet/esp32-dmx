@@ -1,0 +1,82 @@
+import { parseConfig, serializeConfig } from './config';
+
+export const API = {
+  async getConfig() {
+    const res = await fetch('/config');
+    if (!res.ok) throw new Error('Failed to load config');
+    const buffer = await res.arrayBuffer();
+    return parseConfig(buffer);
+  },
+
+  async saveConfig(obj) {
+    const buffer = serializeConfig(obj);
+
+    const res = await fetch('/config', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/octet-stream'
+      },
+      body: buffer
+    });
+    if (!res.ok) throw new Error('Failed to save config');
+  },
+
+  async getScripts() {
+    const res = await fetch('/lua/list');
+    if (!res.ok) throw new Error('Failed to load scripts');
+    return await res.json();
+  },
+
+  async runScript(name) {
+    const res = await fetch('/lua/run', {
+      method: 'POST',
+      body: name
+    });
+    if (!res.ok) throw new Error('Failed to start script');
+  },
+
+  async stopScript() {
+    const res = await fetch('/lua/kill', {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Failed to stop script');
+  },
+
+  async getScriptContent(name) {
+    const res = await fetch(`/lua/scripts/${name}`);
+    if (!res.ok) throw new Error('Failed to load script content');
+    return await res.text();
+  },
+
+  async uploadScript(name, content) {
+    const res = await fetch(`/lua/scripts/${name}`, {
+      method: 'PUT',
+      body: content
+    });
+    if (!res.ok) throw new Error('Failed to upload script');
+  },
+
+  async deleteScript(name) {
+    const res = await fetch(`/lua/scripts/${name}`, {
+      method: 'PUT',
+      body: ''
+    });
+    if (!res.ok) throw new Error('Failed to delete script');
+  },
+
+  async scanWifi() {
+    const res = await fetch('/wifi/scan');
+    if (!res.ok) throw new Error('WiFi scan failed');
+    return await res.json();
+  },
+
+  reboot() {
+    return fetch('/config', { method: 'PUT', body: new Uint8Array(0) });
+  },
+
+  async status() {
+    const res = await fetch('/status');
+    if (!res.ok) throw new Error('Failed to get device status');
+    return await res.json();
+  },
+};

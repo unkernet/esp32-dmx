@@ -1,0 +1,259 @@
+import { useState, useEffect, useRef } from "preact/hooks";
+import { API } from "../api";
+import { Card, Modal } from "./Common";
+import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle } from "lucide-preact";
+
+export function ScriptingTab() {
+  const [scripts, setScripts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [runningScript, setRunningScript] = useState(null);
+  const [scriptError, setScriptError] = useState(null);
+  const [showContentModal, setShowContentModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [currentScriptContent, setCurrentScriptContent] = useState("");
+  const [currentScriptFileName, setCurrentScriptFileName] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [scriptToDelete, setScriptToDelete] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const fetchScripts = async () => {
+    try {
+      setLoading(true);
+      const data = await API.getScripts();
+      setScripts(data.scripts || []);
+      setRunningScript(data.running || null);
+      setScriptError(data.error || null);
+    } catch (e) {
+      alert("Failed to fetch scripts: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const uploadFiles = async (files) => {
+    setLoading(true);
+    for (const file of Array.from(files)) {
+      if (file.name.endsWith('.lua')) {
+        try {
+          const content = await file.text();
+          await API.uploadScript(file.name, content);
+        } catch (e) {
+          alert(`Failed to upload ${file.name}: ${e.message}`);
+        }
+      }
+    }
+    await fetchScripts();
+  };
+
+  useEffect(() => {
+    fetchScripts();
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const handleDrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        uploadFiles(e.dataTransfer.files);
+      }
+    };
+
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("drop", handleDrop);
+
+    return () => {
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, []);
+
+  const handleRunScript = async (fileName) => {
+    try {
+      setLoading(true);
+      await API.runScript(fileName);
+      setTimeout(fetchScripts, 1000); // Re-fetch after 1s to get new status/error
+    } catch (e) {
+      alert("Failed to run script: " + e.message);
+      fetchScripts();
+    }
+  };
+
+  const handleStopScript = async () => {
+    try {
+      setLoading(true);
+      await API.stopScript();
+      setTimeout(fetchScripts, 100);
+    } catch (e) {
+      setLoading(false);
+      alert("Failed to stop script: " + e.message);
+    }
+  };
+
+  const handleViewScript = async (fileName) => {
+    try {
+      const content = await API.getScriptContent(fileName);
+      setCurrentScriptContent(content);
+      setCurrentScriptFileName(fileName);
+      setShowContentModal(true);
+    } catch (e) {
+      alert("Failed to load script content: " + e.message);
+    }
+  };
+
+  const handleDeleteScript = async (fileName) => {
+    setScriptToDelete(fileName);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      setLoading(true);
+      await API.deleteScript(scriptToDelete);
+      await fetchScripts();
+      setShowDeleteConfirm(false);
+      setScriptToDelete(null);
+    } catch (e) {
+      alert("Failed to delete script: " + e.message);
+    }
+  };
+
+  const refreshBtn = (
+    <>
+      <button onClick={() => setShowGuideModal(true)} title="Scripting Guide">
+        <HelpCircle size={20} />
+      </button>
+      <button onClick={fetchScripts} title="Refresh List" aria-busy={loading}>
+        { loading ? null : <RefreshCcw size={20} /> }
+      </button>
+    </>
+  );
+
+  return (
+    <>
+      <Card
+        title="Lua Scripts"
+        // notice={`Only ~120KB of memory is available for Lua scripting.\nRunning complex scripts may impact device performance.`}
+        btn={refreshBtn}
+        class="scripts"
+      >
+        <div class="description">{`Only ~120KB of memory is available for Lua scripting.\nRunning complex scripts may impact device performance.`}</div>
+        <p>
+          <button class="outline" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+            <Upload size={20} style={{ marginRight: "10px" }} />
+            Upload Script (.lua)
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            style={{ display: "none" }} 
+            accept=".lua"
+            multiple
+            onChange={(e) => uploadFiles(e.target.files)}
+          />
+        </p>
+
+        {scriptError && (
+          <p class="err">{scriptError}</p>
+        )}
+        <ul>
+          {scripts.length === 0 ? (
+            <li>No scripts found.</li>
+          ) : (
+            scripts.map((script) => {
+              const running = runningScript === script;
+              return <li key={script} class={running ? "run" : null}>
+                <span>{script}</span>
+                <div>
+                  {running ? (
+                    <button class="secondary" onClick={handleStopScript} title="Stop Script">
+                      <StopCircle size={20} />
+                    </button>
+                  ) : (
+                    <button class="secondary" onClick={() => handleRunScript(script)} title="Run Script">
+                      <PlayBtn size={20} />
+                    </button>
+                  )}
+                  <button class="secondary" onClick={() => handleViewScript(script)} title="View Script">
+                    <FileText size={20} />
+                  </button>
+                  <button class="secondary" onClick={() => handleDeleteScript(script)} title="Delete Script">
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              </li>;
+            })
+          )}
+        </ul>
+      </Card>
+
+      <Modal
+        isOpen={showContentModal}
+        title={`Script: ${currentScriptFileName}`}
+        onClose={() => setShowContentModal(false)}
+      >
+        <pre class="script-src">
+          {currentScriptContent}
+        </pre>
+      </Modal>
+
+      <Modal
+        isOpen={showDeleteConfirm}
+        title="Confirm Delete"
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDelete}
+        confirmText="Delete"
+      >
+        <p>Are you sure you want to delete script: <strong>{scriptToDelete}</strong>?</p>
+        <p>This action cannot be undone.</p>
+      </Modal>
+
+      <Modal
+        isOpen={showGuideModal}
+        title="Scripting Guide"
+        onClose={() => setShowGuideModal(false)}
+      >
+        <div class="s-guide">
+          <p>Scripts usually include an <strong>endless loop</strong> to process or generate DMX data in real-time.</p>
+          <p>Script file named <code>init.lua</code> will be run on startup.</p>
+
+          <h4>Functions:</h4>
+          <ul>
+            <li>
+              <code>dmx_send(universe, data, network)</code><br/>
+              Transmit data. <code>data</code> should be a binary string (e.g., from <code>string.char</code>). If <code>network</code> is true, data is also sent via Art-Net and WebSocket.
+            </li>
+            <li>
+              <code>dmx_read(universe, timeout)</code><br/>
+              Wait up to <code>timeout</code> ms for data. Returns binary string or <code>nil</code>.
+            </li>
+            <li>
+              <code>sleep(ms)</code><br/>
+              Pause execution for the specified milliseconds.
+            </li>
+            <li>
+              <code>random(min, max)</code><br/>
+              Generate a true random integer between <code>min</code> and <code>max</code> (inclusive). If no arguments, returns a full 32-bit integer.
+            </li>
+            <li>
+              <code>print(string)</code><br/>
+              Print a message to the system log for debugging.
+            </li>
+          </ul>
+
+          <h4>Example:</h4>
+          <pre style={{ background: "var(--pico-code-background)", padding: "10px" }}>{
+`while true do
+  local data = dmx_read(1, 100)
+  if data then
+    dmx_send(2, data)
+  end
+  sleep(100)
+end`
+          }</pre>
+        </div>
+      </Modal>
+    </>
+  );
+}

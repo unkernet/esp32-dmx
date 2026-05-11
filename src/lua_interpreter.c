@@ -126,7 +126,19 @@ static int l_sleep(lua_State *L) {
 }
 
 static int l_random(lua_State *L) {
-    lua_pushinteger(L, esp_random());
+    int n = lua_gettop(L);
+    if (n == 0) {
+        lua_pushinteger(L, esp_random());
+    } else if (n == 1) {
+        int max = luaL_checkinteger(L, 1);
+        if (max < 1) return luaL_error(L, "max must be >= 1");
+        lua_pushinteger(L, (esp_random() % max) + 1);
+    } else {
+        int min = luaL_checkinteger(L, 1);
+        int max = luaL_checkinteger(L, 2);
+        if (max < min) return luaL_error(L, "max must be >= min");
+        lua_pushinteger(L, (esp_random() % (max - min + 1)) + min);
+    }
     return 1;
 }
 

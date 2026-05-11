@@ -1,0 +1,397 @@
+:root {
+  --primary: #10ad91;
+  --sidebar-height: 56px;
+  --sidebar-width: 60px;
+  --sidebar-expanded-width: 200px;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+article p:last-child {
+  margin-bottom: 0;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  max-width: var(--sidebar-width);
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  background: var(--pico-card-background-color);
+  border-right: 1px solid var(--pico-muted-border-color);
+  transition: max-width 0.2s ease-in-out;
+  overflow-x: hidden;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 10px #0003;
+}
+
+.sidebar:hover {
+  max-width: var(--sidebar-expanded-width);
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 !important;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.sidebar li {
+  padding: 0;
+}
+.sidebar li a {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  padding: .5rem 1rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sidebar li a:after {
+  content: attr(title);
+  margin-left: 1rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar li.bigger svg {
+  transform: scale(1.25);
+}
+
+.sidebar:hover li a:after {
+  opacity: 1;
+}
+
+/* Main Content Area */
+main.container {
+  margin-left: var(--sidebar-width);
+  padding: 2rem;
+  flex: 1;
+}
+
+main.container.dirty {
+  padding-bottom: 94px;
+}
+
+div .scan-btn {
+  padding: var(--pico-form-element-spacing-vertical) 0;
+  width: 80px;
+  flex: none;
+}
+
+.dmx-controls {
+  overflow-x: auto;
+  padding-bottom: 1rem;
+  font-size: .6rem;
+}
+.dmx-controls > div {
+  display: flex;
+  padding: 5px 0;
+  gap: 4px;
+  min-width: fit-content;
+}
+.dmx-controls > div > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dmx-controls input {
+  width: 15px;
+  height: 150px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  margin: 0 4px;
+  appearance: auto;
+}
+.dmx-mon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border: 1px solid var(--pico-form-element-border-color);
+  padding: 5px;
+  border-radius: 5px;
+  min-height: 100px;
+  align-content: flex-start;
+  background-color: var(--pico-card-background-color);
+  font-weight: 600;
+  font-size: 0.6rem;
+}
+.dmx-mon > div {
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 3px;
+  text-align: center;
+  text-shadow: 0 0 2px #fff8;
+  --bg1: color-mix(in srgb, var(--pico-primary-background) 20%, transparent);
+  --bg2: color-mix(in srgb, var(--pico-primary-background) 50%, transparent);
+  --val: calc(attr(data-val number) / 2.55 * 1%);
+  background-image: linear-gradient(to top, var(--bg1), var(--bg2) var(--val), transparent var(--val));
+}
+
+.dmx-mon > div:after {
+  content: attr(data-val);
+}
+
+article > header:has(>button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+article > header:has(>button) > strong {
+  flex-grow: 1;
+}
+article > header > button {
+  padding: 4px 8px;
+  min-width: 45px;
+  flex: none;
+  margin-left: 1ch;
+}
+article > header > button.secondary {
+  opacity: .5;
+}
+
+.save-bar {
+  position: fixed;
+  bottom: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  background: var(--pico-card-background-color);
+  border-top: 1.5px solid var(--primary);
+  padding: 1rem 0;
+  z-index: 90;
+  box-shadow: 0 -4px 10px #0003;
+}
+
+.save-bar .container {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: 2rem;
+  padding-right: 2rem;
+  margin-left: 0;
+}
+
+.save-bar button {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.notice {
+  font-size: 0.8rem;
+  color: var(--secondary);
+  /* margin-top: 1rem; */
+  white-space: pre-wrap;
+}
+
+.description {
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  background-color: rgba(255,255,255,0.05); 
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  border-left: 2px solid var(--primary);
+}
+
+.scripts .err {
+  color: var(--pico-form-element-invalid-active-border-color);
+  font-family: var(--pico-font-family-monospace);
+  white-space: pre-wrap;
+}
+.scripts ul {
+  padding: 0;
+}
+.scripts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: calc(var(--pico-typography-spacing-vertical) * .25);
+  border-bottom: solid 1px var(--pico-muted-border-color);
+}
+.scripts li span {
+  flex-grow: 1;
+}
+.scripts li div {
+  display: flex;
+  gap: .5rem;
+}
+.scripts li:before {
+  content: "";
+  display: block;
+  flex: none;
+  width: 2ch;
+}
+.scripts li.run:before {
+  color: var(--primary);
+  content: "▶";
+}
+.scripts ul button {
+  padding: .25em var(--pico-form-element-spacing-horizontal);
+  line-height: 1em;
+}
+
+.script-src {
+  user-select: text;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: transparent;
+}
+.s-guide {
+  max-height: 70vh;
+  overflow-y: auto;
+  user-select: text;
+}
+.s-guide code, .s-guide pre, .script-src {
+  color: color-mix(in srgb, var(--pico-code-color) 30%, var(--pico-primary));
+  
+}
+.s-guide code {
+  padding: 0;
+  font-weight: 600;
+}
+
+@property --free {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+@property --block {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+@property --min {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+
+.sysinfo .field {
+  margin-bottom: 1rem;
+}
+
+.mem {
+  width: 100%;
+  height: 1rem;
+  border: 0;
+  border-radius: var(--pico-border-radius);
+  box-shadow: inset 0px -3px 6px #0004, inset 0px 3px 6px #fff6;
+
+  --_total: max(1, var(--total, 1)); 
+  --_used: max(0, calc(var(--_total) - var(--free, 0)));
+  --_frag: max(0, calc(var(--free, 0) - var(--block, 0)));
+  --_green-part: min(var(--block, 0), var(--min, 0));
+  --_blue-part: calc(var(--block, 0) - var(--_green-part));
+  --_red-end-p: calc(var(--_used) / var(--_total) * 100%);
+  --_yellow-end-p: calc(var(--_red-end-p) + (var(--_frag) / var(--_total) * 100%));
+  --_blue-end-p: calc(var(--_yellow-end-p) + (var(--_blue-part) / var(--_total) * 100%));
+  --_yellow-c: color-mix(in hsl, var(--pico-form-element-invalid-focus-color) 75%, var(--pico-form-element-valid-focus-color));
+  
+  background-image: linear-gradient(to right,
+    /* Red: Used Memory */
+    var(--pico-form-element-invalid-focus-color) 0%,
+    var(--pico-form-element-invalid-focus-color) var(--_red-end-p),
+    
+    /* Yellow: Fragmented Free Memory */
+    var(--_yellow-c) var(--_red-end-p),
+    var(--_yellow-c) var(--_yellow-end-p),
+    
+    /* Blue: Largest Contiguous Block*/
+    var(--pico-primary-background) var(--_yellow-end-p),
+    var(--pico-primary-background) var(--_blue-end-p),
+    
+    /* Green: Naver Used Block */
+    var(--pico-form-element-valid-focus-color) var(--_blue-end-p),
+    var(--pico-form-element-valid-focus-color) 100%
+  );
+
+  transition-duration: .3s;
+  transition-property: --free, --block, --min;
+}
+
+@media only screen and (prefers-color-scheme: dark) {
+  .dmx-mon > div {
+    --bg1: color-mix(in srgb, var(--pico-primary-background) 30%, transparent);
+    --bg2: var(--pico-primary-background);
+    text-shadow: 0 0 3px black;
+  }
+  .sidebar {
+    box-shadow: 4px 0 10px #0006;
+  }
+  .save-bar {
+    box-shadow: 0 -4px 10px #0006;
+  }
+}
+
+@media (max-width: 575px) {
+  .sidebar {
+    top: unset;
+    bottom: 0;
+    right: 0;
+    height: unset;
+    border-right: none;
+    border-top: 1px solid var(--pico-muted-border-color);
+    box-shadow: none;
+  }
+  .sidebar, .sidebar:hover {
+    max-width: unset;
+  }
+  .sidebar ul {
+    flex-flow: row;
+    overflow-x: auto;
+    justify-content: space-evenly;
+    height: var(--sidebar-height);
+  }
+  .sidebar li {
+    padding: calc(var(--pico-nav-element-spacing-vertical) / 2) 0;
+  }
+  .sidebar li a {
+    padding: .5rem;
+  }
+  .sidebar li a:after {
+    content: none;
+  }
+  
+  main.container {
+    margin-left: 0;
+    padding-bottom: 60px; /* Space for mobile nav */
+    max-width: 100%;
+  }
+
+  main.container.dirty {
+    padding-bottom: 120px;
+  }
+
+  .mobile-nav {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .save-bar {
+    left: 0;
+    bottom: var(--sidebar-height); /* Above mobile nav */
+    padding: .5rem 0;
+  }
+  .save-bar .container {
+    max-width: 100%;
+  }
+  .save-bar button {
+    padding: calc(var(--pico-form-element-spacing-vertical) / 2) var(--pico-form-element-spacing-horizontal);
+  }
+}
