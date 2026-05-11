@@ -53,6 +53,7 @@ esp_err_t dmx_2_init(app_config_t *config)
     dmx_cfg->in_universe = config->dmx_2_in_universe;
     dmx_cfg->out_universe = config->dmx_2_out_universe;
     dmx_cfg->repeat_interval = config->dmx_2_repeat_interval;
+    dmx_cfg->repeat_time = config->dmx_2_repeat_time;
     dmx_cfg->enabled = ((config->enabled_modules & MOD_EN_DMX_2_IN) ? MOD_EN_DMX_IN : 0) |
         ((config->enabled_modules & MOD_EN_DMX_2_OUT) ? MOD_EN_DMX_OUT : 0);
 

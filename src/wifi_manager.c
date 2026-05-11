@@ -188,7 +188,7 @@ static bool wifi_start_sta(void)
 
         esp_netif_ip_info_t ip_info;
         ip_info.ip.addr = cfg->sta_ip;
-        ip_info.gw.addr = cfg->sta_gateway;
+        ip_info.gw.addr = 0;
         if (cfg->sta_netmask_len <= 32) {
             ip_info.netmask.addr = htonl(~((1U << (32 - cfg->sta_netmask_len)) - 1));
         } else {

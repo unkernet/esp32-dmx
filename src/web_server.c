@@ -27,20 +27,19 @@ typedef struct {
 } ws_client_info_t;
 
 static const char *TAG = "WEB_SERVER";
-
 static ws_client_info_t active_ws_client = { .handle = NULL, .fd = -1, .active = false };
 static SemaphoreHandle_t ws_mutex = NULL;
-
 static uint8_t ws_tx_buf[MAX_DATA_SIZE + 2];
 static size_t ws_tx_len = 0;
 static TaskHandle_t ws_send_task_handle = NULL;
-static SemaphoreHandle_t ws_buffer_sem = NULL;
+static SemaphoreHandle_t ws_buffer_mutex = NULL;
+static app_config_t *app_config; // Pointer to the global configuration
 
 static void ws_send_task(void *arg) {
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        xSemaphoreTake(ws_buffer_sem, portMAX_DELAY);
+        xSemaphoreTake(ws_buffer_mutex, portMAX_DELAY);
         xSemaphoreTake(ws_mutex, portMAX_DELAY);
         if (active_ws_client.active) {
             httpd_ws_frame_t ws_pkt = {
@@ -51,12 +50,34 @@ static void ws_send_task(void *arg) {
             httpd_ws_send_frame_async(active_ws_client.handle, active_ws_client.fd, &ws_pkt);
         }
         xSemaphoreGive(ws_mutex);
-        xSemaphoreGive(ws_buffer_sem);
+        xSemaphoreGive(ws_buffer_mutex);
+        vTaskDelay(pdMS_TO_TICKS(100)); // Short delay to prevent data sending too often
     }
 }
 
-extern void esp_restart(void);
-static app_config_t *app_config; // Pointer to the global configuration
+void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
+    if (!app_config) return;
+
+    if (xSemaphoreTake(ws_mutex, 0) == pdTRUE) {
+        bool active = active_ws_client.active;
+        xSemaphoreGive(ws_mutex);
+        if (!active) return;
+    } else {
+        return;
+    }
+
+    if (xSemaphoreTake(ws_buffer_mutex, 0) == pdTRUE) {
+        if (length > MAX_DATA_SIZE) length = MAX_DATA_SIZE;
+        ws_tx_buf[0] = universe & 0xff;
+        ws_tx_buf[1] = universe >> 8;
+        memcpy(ws_tx_buf + 2, data, length);
+        ws_tx_len = length + 2;
+
+        xSemaphoreGive(ws_buffer_mutex);
+        xTaskNotifyGive(ws_send_task_handle);
+    }
+}
+
 
 // Helper to check if a file exists and get its size
 static esp_err_t get_file_info(const char *filepath, struct stat *st) {
@@ -488,8 +509,7 @@ void httpd_close_cb(httpd_handle_t hd, int sockfd)
 esp_err_t start_webserver(app_config_t *config)
 {
     RETURN_ON_NULL(ws_mutex = xSemaphoreCreateMutex(), ESP_ERR_NO_MEM);
-    RETURN_ON_NULL(ws_buffer_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
-    xSemaphoreGive(ws_buffer_sem);
+    RETURN_ON_NULL(ws_buffer_mutex = xSemaphoreCreateMutex(), ESP_ERR_NO_MEM);
 
     xTaskCreate(ws_send_task, "ws_send_task", 2048, NULL, 5, &ws_send_task_handle);
     RETURN_ON_NULL(ws_send_task_handle, ESP_ERR_NO_MEM);
@@ -519,27 +539,4 @@ esp_err_t start_webserver(app_config_t *config)
 
     app_config = config;
     return ESP_OK;
-}
-
-void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (!app_config) return;
-
-    if (xSemaphoreTake(ws_mutex, 0) == pdTRUE) {
-        bool active = active_ws_client.active;
-        xSemaphoreGive(ws_mutex);
-        if (!active) return;
-    } else {
-        return;
-    }
-
-    if (xSemaphoreTake(ws_buffer_sem, 0) == pdTRUE) {
-        if (length > MAX_DATA_SIZE) length = MAX_DATA_SIZE;
-        ws_tx_buf[0] = universe & 0xff;
-        ws_tx_buf[1] = universe >> 8;
-        memcpy(ws_tx_buf + 2, data, length);
-        ws_tx_len = length + 2;
-
-        xSemaphoreGive(ws_buffer_sem);
-        xTaskNotifyGive(ws_send_task_handle);
-    }
 }

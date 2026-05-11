@@ -120,8 +120,14 @@ static void dmx_tx_task(void *arg)
 {
     dmx_config *cfg = (dmx_config*) arg;
     TickType_t max_frame_interval = pdMS_TO_TICKS(MAX(0, cfg->repeat_interval * 5 - 1));
-    // If there was no new data for a 60 second, last packet retransmission will stop
-    int max_retransmits = 60 * 1000 / (cfg->repeat_interval * 5 - 1);
+    // If there was no new data for a `repeat_time` second, last packet retransmission will stop
+    int max_retransmits;
+    if (cfg->repeat_time == 0xff) {
+        max_retransmits = -1; // Endlessly
+    } else {
+        max_retransmits = (int)cfg->repeat_time * 1000 / ((int)cfg->repeat_interval * 5 - 1);
+        if (!max_retransmits) max_retransmits = 1;
+    }
     int retransmits = 0;
     dmx_frame_t frame;
 
@@ -140,7 +146,9 @@ static void dmx_tx_task(void *arg)
         }
 
         if (retransmits) {
-            retransmits--;
+            if (retransmits > 0) {
+                retransmits--;
+            }
             #ifdef DMX_BREAK_AFTER_SLOT
             // The DMX break occurs at the end of the frame
             uart_write_bytes_with_break(cfg->uart_num, frame.data, frame.len, DMX_BREAK_BITS);

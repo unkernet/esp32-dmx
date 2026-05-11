@@ -25,6 +25,7 @@ typedef struct {
     uint16_t in_universe;        ///< Input universe mapping
     uint16_t out_universe;       ///< Output universe mapping
     uint8_t repeat_interval;     ///< Transmission repeat interval
+    uint8_t repeat_time;         ///< Transmission repeat timeout
     uint8_t enabled;             ///< Module enable flag
     dmx_data_source_t source;    ///< Data source enum
     const char *instance_name;   ///< Debug instance name

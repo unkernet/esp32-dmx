@@ -46,7 +46,10 @@ typedef struct __attribute__((packed)) {
     uint8_t sta_dhcp_enabled;
     uint32_t sta_ip;        // IP address in network byte order
     uint8_t sta_netmask_len;   // Netmask CIDR prefix length (e.g., 24 for 255.255.255.0)
-    uint32_t sta_gateway;   // Gateway in network byte order
+
+    uint8_t dmx_repeat_time;
+    uint8_t dmx_2_repeat_time;
+    uint8_t reserved_0[2];
 
     // Access Point (AP) mode settings
     char ap_ssid[MAX_SSID_LEN + 1];

@@ -20,7 +20,6 @@ void app_config_get_default(app_config_t *config) {
     // These values are examples and should be chosen carefully for your network
     config->sta_ip = esp_ip4addr_aton("192.168.1.100");
     config->sta_netmask_len = 24;
-    config->sta_gateway = esp_ip4addr_aton("192.168.1.1");
 
     // Default AP settings
     // Generate AP SSID dynamically based on MAC address
@@ -35,11 +34,13 @@ void app_config_get_default(app_config_t *config) {
 
     config->dmx_out_universe = 0;
     config->dmx_in_universe = 1;
-    config->dmx_repeat_interval = (550 / 5);
+    config->dmx_repeat_interval = (550 / 5); // 550ms
+    config->dmx_repeat_time = 0xff; // Endlessly
 
     config->dmx_2_out_universe = 2;
     config->dmx_2_in_universe = 3;
-    config->dmx_2_repeat_interval = (550 / 5);
+    config->dmx_2_repeat_interval = (550 / 5); // 550ms
+    config->dmx_2_repeat_time = 0xff; // Endlessly
 
     config->ambitful_universe = 10;
     config->ambitful_addr = 0;
