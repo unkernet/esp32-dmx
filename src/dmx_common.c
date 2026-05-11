@@ -121,18 +121,12 @@ static void dmx_tx_task(void *arg)
     dmx_config *cfg = (dmx_config*) arg;
     TickType_t max_frame_interval = pdMS_TO_TICKS(MAX(0, cfg->repeat_interval * 5 - 1));
     // If there was no new data for a `repeat_time` second, last packet retransmission will stop
-    int max_retransmits;
-    if (cfg->repeat_time == 0xff) {
-        max_retransmits = -1; // Endlessly
-    } else {
-        max_retransmits = (int)cfg->repeat_time * 1000 / ((int)cfg->repeat_interval * 5 - 1);
-        if (!max_retransmits) max_retransmits = 1;
-    }
-    int retransmits = 0;
+    int64_t end_time_us = 0;
+    bool active = false;
     dmx_frame_t frame;
 
     while (1) {
-        BaseType_t notified = ulTaskNotifyTake(pdTRUE, retransmits ? max_frame_interval : portMAX_DELAY);
+        BaseType_t notified = ulTaskNotifyTake(pdTRUE, active ? max_frame_interval : portMAX_DELAY);
 
         if (notified > 0) {
             // Notified: new data is ready in dmx_tx_buf
@@ -141,14 +135,14 @@ static void dmx_tx_task(void *arg)
                 frame.data[0] = 0; // Start byte
                 memcpy(frame.data + 1, cfg->dmx_tx_buf.data, cfg->dmx_tx_buf.len);
                 xSemaphoreGive(cfg->tx_sem);
-                retransmits = max_retransmits;
+                active = true;
+                if (cfg->repeat_time != 0xff) {
+                    end_time_us = esp_timer_get_time() + (int64_t)cfg->repeat_time * 1000000;
+                }
             }
         }
 
-        if (retransmits) {
-            if (retransmits > 0) {
-                retransmits--;
-            }
+        if (active) {
             #ifdef DMX_BREAK_AFTER_SLOT
             // The DMX break occurs at the end of the frame
             uart_write_bytes_with_break(cfg->uart_num, frame.data, frame.len, DMX_BREAK_BITS);
@@ -164,6 +158,10 @@ static void dmx_tx_task(void *arg)
             #endif
 
             vTaskDelay(MAX(1, pdMS_TO_TICKS(1))); // Mark Time After Slot, 1ms
+
+            if (cfg->repeat_time != 0xff && esp_timer_get_time() > end_time_us) {
+                active = false;
+            }
         }
     }
 }
@@ -205,7 +203,7 @@ esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
 
     if ((cfg->enabled & MOD_EN_DMX_IN) != 0) {
         TaskHandle_t dmx_rx_task_handle;
-        xTaskCreate(dmx_rx_task, "dmx_rx", 2048, cfg, 7, &dmx_rx_task_handle);
+        xTaskCreate(dmx_rx_task, "dmx_rx", 2304, cfg, 7, &dmx_rx_task_handle);
         RETURN_ON_NULL(dmx_rx_task_handle, ESP_ERR_NO_MEM);
     } else {
         ESP_LOGI(cfg->instance_name, "rx disabled");
