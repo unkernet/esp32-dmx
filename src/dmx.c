@@ -9,6 +9,7 @@
 #include "dmx.h"
 #include "dmx_common.h"
 #include "router.h"
+#if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
 
 #define DMX_UART_NUM      UART_NUM_1
 
@@ -61,3 +62,4 @@ esp_err_t dmx_init(app_config_t *config)
 
     return ESP_OK;
 }
+#endif // defined(DMX_RX_PIN) && defined(DMX_TX_PIN)

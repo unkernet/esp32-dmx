@@ -1,6 +1,5 @@
 import { Card, FormField } from "./Common";
 import { config } from "../signals";
-import { useState } from 'preact/hooks';
 
 export function ConfigTabs({ moduleName }) {
   const { value: configValue } = config;
@@ -102,7 +101,7 @@ export function ConfigTabs({ moduleName }) {
   const renderBleConfig = () => (
     <Card
       title="Ambitful BLE Configuration"
-      notice="If enabled, this will use approximately 60KB of memory and limit available scripting memory."
+      notice={config.value.meta.supported.lua ? "If enabled, this will use approximately 60KB of memory and limit available scripting memory." : null}
     >
       <label>
         <input 
@@ -173,8 +172,8 @@ export function ConfigTabs({ moduleName }) {
   return (
     <>
       {moduleName === "DMX" && <div class="grid">
-        { renderDmxConfig('dmx', 'DMX') }
-        { renderDmxConfig('dmx_2', 'Wireless DMX') }
+        { (configValue.meta.supported.dmx_in) && renderDmxConfig('dmx', configValue.meta.dmx_name) }
+        { (configValue.meta.supported.dmx_2_in) && renderDmxConfig('dmx_2', configValue.meta.dmx_2_name) }
       </div>}
       {moduleName === "Art-Net" && renderArtnetConfig()}
       {moduleName === "Ambitful BLE" && renderBleConfig()}

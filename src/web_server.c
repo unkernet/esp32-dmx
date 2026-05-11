@@ -32,6 +32,12 @@ typedef struct {
     bool active;
 } ws_client_info_t;
 
+typedef struct __attribute__((packed)) {
+    uint8_t supported;
+    char dmx_name[16];
+    char dmx_2_name[16];
+} device_meta_t;
+
 static const char *TAG = "WEB_SERVER";
 static ws_client_info_t active_ws_client = { .handle = NULL, .fd = -1, .active = false };
 static SemaphoreHandle_t ws_mutex = NULL;
@@ -210,8 +216,48 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    uint8_t supported = MOD_EN_ARTNET_OUT;
+    #if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
+    supported |= MOD_EN_DMX_IN | MOD_EN_DMX_OUT;
+    #endif
+    #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
+    supported |= MOD_EN_DMX_2_IN | MOD_EN_DMX_2_OUT;
+    #endif
+    #ifdef AMBITFUL_BLE
+    supported |= MOD_EN_AMBITFUL;
+    #endif
+    #ifdef WS2812_PIN
+    supported |= MOD_EN_WS2812;
+    #endif
+    #ifdef LUA_INTERPRETER
+    supported |= MOD_EN_LUA;
+    #endif
+
+
     httpd_resp_set_type(req, "application/octet-stream");
-    httpd_resp_send(req, (const char*)app_config, sizeof(app_config_t));
+    httpd_resp_send_chunk(req, (const char*)app_config, sizeof(app_config_t));
+
+    device_meta_t meta;
+    meta.supported = supported;
+    strncpy(meta.dmx_name,
+        #ifdef DMX_NAME
+        DMX_NAME
+        #else
+        "DMX"
+        #endif
+        , sizeof(meta.dmx_name)
+    );
+    strncpy(meta.dmx_2_name,
+        #ifdef DMX_2_NAME
+        DMX_2_NAME
+        #else
+        "DMX 2"
+        #endif
+        , sizeof(meta.dmx_2_name)
+    );
+    httpd_resp_send_chunk(req, (const char*)&meta, sizeof(meta));
+
+    httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
 

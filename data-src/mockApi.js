@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { WebSocketServer } from 'ws';
-import { serializeConfig } from './src/config';
+import { serializeConfig, serializeMeta } from './src/config';
 
 const wss = new WebSocketServer({ noServer: true });
 const luaScripts = new Map();
@@ -51,6 +51,21 @@ let cfg = new Uint8Array(serializeConfig({
   ws2812_universe: 20,
 }));
 
+const metaCfg = new Uint8Array(serializeMeta({
+  supported: {
+    dmx_in: true,
+    dmx_out: true,
+    dmx_2_in: true,
+    dmx_2_out: true,
+    artnet_out: true,
+    ambitful: true,
+    ws2812: true,
+    lua: true,
+  },
+  dmx_name: 'DMX',
+  dmx_2_name: 'Wireless DMX',
+}));
+
 export const mockApi = {
   name: 'mock-api',
   configureServer(server) {
@@ -60,7 +75,10 @@ export const mockApi = {
       if (req.url === '/config') {
         if (req.method === 'GET') {
           res.setHeader('Content-Type', 'application/octet-stream');
-          res.end(cfg);
+          const data = new Uint8Array(cfg.byteLength + metaCfg.byteLength);
+          data.set(cfg, 0);
+          data.set(metaCfg, cfg.byteLength);
+          res.end(data);
           return;
         } else if (req.method === 'PUT') {
           req.on('data', data => { cfg = data });

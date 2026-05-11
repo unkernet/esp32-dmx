@@ -52,6 +52,23 @@ export function App() {
   const [initialConfig, setInitialConfig] = useState(null);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
 
+  const { supported } = config.value?.meta || { supported: 0 };
+  console.log(supported)
+  // Filter tabs based on supported modules
+  const filteredTabs = useMemo(() => {
+    const supportedMap = {
+      dmx: ['dmx_in', 'dmx_2_in'],
+      ble: ['ambitful'],
+      ws2812: ['ws2812'],
+      scripting: ['lua'],
+    }
+
+    return tabs.filter(tab => {
+      const flags = supportedMap[tab.id];
+      return !flags || flags.some(flag => supported[flag]);
+    });
+  }, [supported]);
+
   // Load initial config
   useSignalEffect(() => {
     API.getConfig().then(c => {
@@ -82,15 +99,15 @@ export function App() {
   };
 
   const CurrentTabComponent = useMemo(() => {
-    const tab = tabs.find(t => t.id === activeTab.value);
+    const tab = filteredTabs.find(t => t.id === activeTab.value);
     return tab ? tab.component : () => <p>Tab not found</p>;
-  }, [activeTab.value]);
+  }, [activeTab.value, filteredTabs]);
 
   return (
     <div class="layout">
       <nav class="sidebar">
         <ul>
-          {tabs.map(tab => (
+          {filteredTabs.map(tab => (
             <li key={tab.id} class={tab.className}>
               <a 
                 href="#" 
@@ -107,7 +124,7 @@ export function App() {
 
       <main class={"container" + (isDirty.value ? " dirty" : "")}>
         <section id="content">
-          <h1>{tabs.find(t => t.id === activeTab.value)?.label}</h1>
+          <h1>{filteredTabs.find(t => t.id === activeTab.value)?.label}</h1>
           <CurrentTabComponent />
         </section>
       </main>

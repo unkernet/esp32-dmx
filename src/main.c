@@ -10,9 +10,15 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "artnet_server.h"
+#ifdef AMBITFUL_BLE
 #include "ambitful_ble.h"
+#endif
+#ifdef WS2812_PIN
 #include "ws2812.h"
+#endif
+#if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
 #include "dmx.h"
+#endif
 #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
 #include "dmx_2.h"
 #endif
@@ -69,12 +75,18 @@ void app_main() {
     }
 
     LOG_ON_ERROR(wifi_manager_init(&app_config), TAG, "wifi_manager_init failed");
+    #ifdef AMBITFUL_BLE
     LOG_ON_ERROR(ambitful_ble_init(&app_config), TAG, "ambitful_ble_init failed");
+    #endif
+    #if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
     LOG_ON_ERROR(dmx_init(&app_config), TAG, "dmx_init failed");
+    #endif
     #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
     LOG_ON_ERROR(dmx_2_init(&app_config), TAG, "dmx_2_init failed");
     #endif
+    #ifdef WS2812_PIN
     LOG_ON_ERROR(ws2812_init(&app_config), TAG, "ws2812_init failed");
+    #endif
     LOG_ON_ERROR(start_webserver(&app_config), TAG, "start_webserver failed");
     LOG_ON_ERROR(start_artnet_server(&app_config), TAG, "start_artnet_server failed");
     LOG_ON_ERROR(start_mdns(), TAG, "start_mdns failed");

@@ -21,7 +21,7 @@
 #define MOD_EN_ARTNET_OUT  (1<<2)
 #define MOD_EN_AMBITFUL    (1<<3)
 #define MOD_EN_WS2812      (1<<4)
-#define MOD_EN_ESPNOW      (1<<5)
+#define MOD_EN_LUA         (1<<5)
 #define MOD_EN_DMX_2_IN      (1<<6)
 #define MOD_EN_DMX_2_OUT     (1<<7)
 /** @} */

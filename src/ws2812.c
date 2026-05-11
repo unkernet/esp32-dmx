@@ -6,6 +6,10 @@
 #include "ws2812.h"
 #include "hardware_config.h"
 
+#ifndef WS2812_PIN
+#define WS2812_PIN -1
+#endif
+
 #define WS2812_RESET_US 75
 #define MAX_DATA_LEN 512
 static const char *TAG = "WS_2812";

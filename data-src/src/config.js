@@ -1,4 +1,4 @@
-export const struct = [
+const struct = [
   ['sta_ssid', 's33'],
   ['sta_password', 's65'],
   ['sta_dhcp_enabled', 'u8'],
@@ -33,13 +33,19 @@ export const struct = [
   ['reserved_1', 's4'],
 ];
 
-export const enabledModules = {
+const metaStruct = [
+  ['supported', 'u8'],
+  ['dmx_name', 's16'],
+  ['dmx_2_name', 's16'],
+];
+
+const enabledModules = {
   dmx_in    : (1<<0),
   dmx_out   : (1<<1),
   artnet_out: (1<<2),
   ambitful  : (1<<3),
   ws2812    : (1<<4),
-  espnow    : (1<<5),
+  lua       : (1<<5),
   dmx_2_in  : (1<<6),
   dmx_2_out : (1<<7),
 };
@@ -56,7 +62,7 @@ function structSize(schema) {
   return size;
 }
 
-export function decodeStruct(buffer, schema) {
+function decodeStruct(buffer, schema) {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
   let offset = 0;
@@ -87,7 +93,7 @@ export function decodeStruct(buffer, schema) {
   return out;
 }
 
-export function encodeStruct(obj, schema) {
+function encodeStruct(obj, schema) {
   const size = structSize(schema);
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
@@ -123,7 +129,7 @@ export function encodeStruct(obj, schema) {
 }
 
 // IP Helpers
-export function uint32ToIp(uint32) {
+function uint32ToIp(uint32) {
     return [
         (uint32 & 0xFF),
         (uint32 >> 8) & 0xFF,
@@ -132,7 +138,7 @@ export function uint32ToIp(uint32) {
     ].join('.');
 }
 
-export function ipToUint32(ipString) {
+function ipToUint32(ipString) {
     const parts = ipString.split('.').map(Number);
     if (parts.length !== 4 || parts.some(isNaN)) {
         return 0;
@@ -140,28 +146,44 @@ export function ipToUint32(ipString) {
     return (parts[0] | (parts[1] << 8) | (parts[2] << 16) | (parts[3] << 24)) >>> 0;
 }
 
-export function parseIpCidr(ipCidrString) {
+function parseIpCidr(ipCidrString) {
     const parts = ipCidrString.split('/');
     const ip = parts[0];
     const cidr = parseInt(parts[1], 10);
     return { ip: ipToUint32(ip), cidr: cidr };
 }
 
-export function formatIpCidr(ipUint32, cidrLen) {
+function formatIpCidr(ipUint32, cidrLen) {
     return `${uint32ToIp(ipUint32)}/${cidrLen}`;
 }
 
-export function parseConfig(buffer) {
-  const obj = decodeStruct(buffer, struct);
+function parseBitfield(value, fields) {
+  const ret = {};
+  for (const field in fields) {
+    ret[field] = (value & fields[field]) > 0;
+  }
+  return ret;
+}
 
-  
+function serializeBitfield(value, fields) {
+  let ret = 0;
+  for (const field in fields) {
+    if (value[field]) {
+      ret |= fields[field];
+    }
+  }
+  return ret;
+}
+
+export function parseConfig(buffer) {
+  const size = structSize(struct);
+  const obj = decodeStruct(buffer.slice(0, size), struct);
+  obj.meta = decodeStruct(buffer.slice(size), metaStruct);
+  obj.meta.supported = parseBitfield(obj.meta.supported, enabledModules);
+
   // Transform binary to high-level strings
   obj.sta_ip_cidr = formatIpCidr(obj.sta_ip, obj.sta_netmask_len);
-  const enabled_modules = {};
-  for (const mod in enabledModules) {
-    enabled_modules[mod] = (obj.enabled_modules & enabledModules[mod]) > 0;
-  }
-  obj.enabled_modules = enabled_modules;
+  obj.enabled_modules = parseBitfield(obj.enabled_modules, enabledModules);
   delete obj.sta_ip;
   delete obj.sta_netmask_len;
 
@@ -190,13 +212,12 @@ export function serializeConfig(conf) {
     if (data.dmx_2_repeat_time_endless) {
       data.dmx_2_repeat_time = 255;
     }
-    let enabled_modules = 0;
-    for (const mod in enabledModules) {
-      if (data.enabled_modules[mod]) {
-        enabled_modules |= enabledModules[mod];
-      }
-    }
-    data.enabled_modules = enabled_modules;
+    data.enabled_modules = serializeBitfield(data.enabled_modules, enabledModules);
 
     return encodeStruct(data, struct);
+}
+
+export function serializeMeta(info) { // For mock only
+  info.supported = serializeBitfield(info.supported, enabledModules);
+  return encodeStruct(info, metaStruct);
 }
