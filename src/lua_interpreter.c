@@ -289,13 +289,15 @@ esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
     int status_len;
     
     // Escape last_error
-    for (char *p = last_error; *p && (p < last_error + ERROR_LEN); p++) {
-        if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t')
-            *p = ' ';
+    if (last_error) {
+        for (char *p = last_error; *p && (p < last_error + ERROR_LEN); p++) {
+            if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t')
+                *p = ' ';
+        }
     }
 
     const char *running = lua_interpreter_is_running() ? current_script : NULL;
-    const char *error = (last_error[0] != '\0') ? last_error : NULL;
+    const char *error = (last_error && last_error[0] != '\0') ? last_error : NULL;
 
     status_len = snprintf(status_buf, sizeof(status_buf), 
         "],\"running\":%s%s%s,\"error\":%s%s%s}",

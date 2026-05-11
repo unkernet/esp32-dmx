@@ -14,8 +14,14 @@
 #include "app_config_nvs.h"
 #include "router.h"
 #include "wifi_manager.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
 #ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
+#endif
+
+#if ( ( configUSE_TRACE_FACILITY == 1 ) && ( configUSE_STATS_FORMATTING_FUNCTIONS > 0 ) )
+#define TASK_LIST
 #endif
 
 #define MAX_DATA_SIZE 512
@@ -77,6 +83,42 @@ void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) 
         xTaskNotifyGive(ws_send_task_handle);
     }
 }
+
+static esp_err_t http_get_status_handler(httpd_req_t *req) {
+    char json_buf[256]; // Sufficient for the JSON response
+    int64_t uptime_us = esp_timer_get_time();
+
+    uint32_t heap_total = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+    uint32_t heap_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    uint32_t heap_free_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    uint32_t heap_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+
+    snprintf(json_buf, sizeof(json_buf),
+             "{"
+               "\"uptime\": %lld,"
+               "\"heap\":{"
+                 "\"total\": %u,"
+                 "\"free\": %u,"
+                 "\"block\": %u,"
+                 "\"min\": %u"
+               "}"
+             "}",
+             uptime_us / 1000000,
+             heap_total, heap_free, heap_free_block, heap_min_free
+            );
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json_buf);
+    return ESP_OK;
+}
+
+static const httpd_uri_t get_status_uri = {
+    .uri      = "/status",
+    .method   = HTTP_GET,
+    .handler  = http_get_status_handler,
+    .user_ctx = NULL
+};
+
 
 
 // Helper to check if a file exists and get its size
@@ -180,6 +222,14 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    if (req->content_len == 0) {
+        // Just reboot
+        httpd_resp_send(req, NULL, 0);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+        return ESP_OK;
+    }
+
     if (req->content_len != sizeof(app_config_t)) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid config size");
         return ESP_FAIL;
@@ -204,12 +254,13 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     }
 
     httpd_resp_send(req, NULL, 0);
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
 
     return ESP_OK;
 }
 
+#ifdef TASK_LIST
 static esp_err_t http_get_task_list_handler(httpd_req_t *req)
 {
     char buf[1024];
@@ -224,7 +275,15 @@ static esp_err_t http_get_task_list_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, buf, strlen(buf));
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
-}   
+}
+
+static const httpd_uri_t get_task_list = {
+    .uri      = "/task_list",
+    .method   = HTTP_GET,
+    .handler  = http_get_task_list_handler,
+    .user_ctx = NULL
+};
+#endif
 
 static void remove_ws_client(int fd)
 {
@@ -309,6 +368,13 @@ static const httpd_uri_t get_js_uri = {
     .user_ctx = NULL
 };
 
+static const httpd_uri_t get_css_uri = {
+    .uri      = "/index.css",
+    .method   = HTTP_GET,
+    .handler  = serve_static_file,
+    .user_ctx = NULL
+};
+
 static const httpd_uri_t get_config_uri = {
     .uri      = "/config",
     .method   = HTTP_GET,
@@ -342,12 +408,6 @@ static const httpd_uri_t get_wifi_scan_uri = {
     .user_ctx = NULL
 };
 
-static const httpd_uri_t get_task_list = {
-    .uri      = "/task_list",
-    .method   = HTTP_GET,
-    .handler  = http_get_task_list_handler,
-    .user_ctx = NULL
-};
 
 #ifdef LUA_INTERPRETER
 static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
@@ -516,19 +576,23 @@ esp_err_t start_webserver(app_config_t *config)
 
     httpd_handle_t server = NULL;
     httpd_config_t httpd_cfg = HTTPD_DEFAULT_CONFIG();
-    httpd_cfg.max_uri_handlers = 12; // Increase limit to accommodate Lua API
-    httpd_cfg.uri_match_fn = httpd_uri_match_wildcard; // Enable wildcard matching if needed
+    httpd_cfg.max_uri_handlers = 14;
+    httpd_cfg.uri_match_fn = httpd_uri_match_wildcard;
     httpd_cfg.close_fn = httpd_close_cb;
 
     RETURN_ON_ERROR(httpd_start(&server, &httpd_cfg));
 
     httpd_register_uri_handler(server, &get_root_uri);
     httpd_register_uri_handler(server, &get_js_uri);
+    httpd_register_uri_handler(server, &get_css_uri);
     httpd_register_uri_handler(server, &get_config_uri);
     httpd_register_uri_handler(server, &put_config_uri);
     httpd_register_uri_handler(server, &ws_uri);
     httpd_register_uri_handler(server, &get_wifi_scan_uri);
+    httpd_register_uri_handler(server, &get_status_uri);
+    #ifdef TASK_LIST
     httpd_register_uri_handler(server, &get_task_list);
+    #endif
     #ifdef LUA_INTERPRETER
     httpd_register_uri_handler(server, &get_lua_list_uri);
     httpd_register_uri_handler(server, &post_lua_run_uri);
