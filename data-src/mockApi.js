@@ -121,19 +121,14 @@ export const mockApi = {
         return;
       }
 
-      if (req.url === '/lua/run' && req.method === 'POST') {
-        let body = '';
-        req.on('data', d => body += d);
-        req.on('end', () => {
-          if (body === 'error.lua') {
+      if (req.url.startsWith('/lua/run/') && req.method === 'POST') {
+        runningScript = req.url.substr('/lua/run/'.length) || '|';
+        lastError = null;
+        if (runningScript === 'error.lua') {
             lastError = 'Error: Mock runtime error';
             runningScript = null;
-          } else {
-            runningScript = body;
-            lastError = null;
-          }
-          res.end('OK');
-        });
+        }
+        res.end('OK');
         return;
       }
 

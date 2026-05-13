@@ -36,6 +36,7 @@ export function ConfigTabs({ moduleName }) {
           />
         </FormField>
         </> : null }
+      { (dmxIn && dmxOut) ? <hr/> : null }
       { dmxOut ? <>
         <label>
           <input 

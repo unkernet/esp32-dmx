@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "preact/hooks";
 import { API } from "../api";
 import { Card, Modal } from "./Common";
-import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle } from "lucide-preact";
+import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle, Plus, Save } from "lucide-preact";
 
 export function ScriptingTab() {
   const [scripts, setScripts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningScript, setRunningScript] = useState(null);
   const [scriptError, setScriptError] = useState(null);
+  const [hideError, setHideError] = useState(null);
   const [showContentModal, setShowContentModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [currentScriptContent, setCurrentScriptContent] = useState("");
@@ -15,6 +16,7 @@ export function ScriptingTab() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [scriptToDelete, setScriptToDelete] = useState(null);
   const fileInputRef = useRef(null);
+  const editorRef = useRef(null);
 
   const fetchScripts = async () => {
     try {
@@ -96,9 +98,67 @@ export function ScriptingTab() {
       const content = await API.getScriptContent(fileName);
       setCurrentScriptContent(content);
       setCurrentScriptFileName(fileName);
+      setHideError(true);
       setShowContentModal(true);
     } catch (e) {
       alert("Failed to load script content: " + e.message);
+    }
+  };
+
+  const handleNewScript = () => {
+    setCurrentScriptContent("");
+    setCurrentScriptFileName("");
+    setShowContentModal(true);
+  };
+
+  const handleSaveScript = async () => {
+    if (!currentScriptFileName) return;
+    let name = currentScriptFileName;
+    if (!name.toLowerCase().endsWith(".lua")) {
+      name += ".lua";
+    }
+    try {
+      setLoading(true);
+      await API.uploadScript(name, currentScriptContent);
+      setShowContentModal(false);
+      await fetchScripts();
+    } catch (e) {
+      alert("Failed to save script: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleRunStream = async () => {
+    try {
+      setLoading(true);
+      setScriptError(null);
+      setHideError(false);
+      await API.runStream(currentScriptContent);
+      setTimeout(fetchScripts, 500);
+    } catch (e) {
+      alert("Failed to run script: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleEditorKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const { selectionStart, selectionEnd, value } = e.target;
+      const before = value.substring(0, selectionStart);
+      const after = value.substring(selectionEnd);
+      const line = before.split('\n').pop();
+      const spaces = line.match(/^\s*/)[0];
+      
+      const newValue = before + '\n' + spaces + after;
+      setCurrentScriptContent(newValue);
+      
+      const newPos = selectionStart + 1 + spaces.length;
+      setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.selectionStart = editorRef.current.selectionEnd = newPos;
+        }
+      }, 0);
     }
   };
 
@@ -139,7 +199,11 @@ export function ScriptingTab() {
         class="scripts"
       >
         <div class="description">{`Only ~120KB of memory is available for Lua scripting.\nRunning complex scripts may impact device performance.`}</div>
-        <p>
+        <p class="script-actions">
+          <button class="outline" onClick={handleNewScript} disabled={loading}>
+            <Plus size={20} style={{ marginRight: "10px" }} />
+            New Script
+          </button>
           <button class="outline" onClick={() => fileInputRef.current?.click()} disabled={loading}>
             <Upload size={20} style={{ marginRight: "10px" }} />
             Upload Script (.lua)
@@ -190,12 +254,39 @@ export function ScriptingTab() {
 
       <Modal
         isOpen={showContentModal}
-        title={`Script: ${currentScriptFileName}`}
+        title={currentScriptFileName ? `Edit Script: ${currentScriptFileName}` : "New Script"}
         onClose={() => setShowContentModal(false)}
+        class="script"
+        footer={
+          <>
+            { scriptError && !hideError ? <div class="err">{scriptError}</div> : null }
+            {/* <button class="secondary outline" onClick={() => setShowContentModal(false)}>Close</button> */}
+            <button class="secondary" onClick={handleRunStream} title="Run without saving">
+              <PlayBtn size={20} /> Run
+            </button>
+            <button onClick={handleSaveScript} disabled={!currentScriptFileName} title="Save to flash">
+              <Save size={20} /> Save
+            </button>
+          </>
+        }
       >
-        <pre class="script-src">
-          {currentScriptContent}
-        </pre>
+        <div class="script-editor">
+          <input 
+            type="text" 
+            placeholder="Filename (e.g. effect.lua)" 
+            value={currentScriptFileName}
+            onInput={(e) => setCurrentScriptFileName(e.target.value)}
+          />
+          <textarea 
+            ref={editorRef}
+            class="script-src"
+            value={currentScriptContent}
+            onInput={(e) => setCurrentScriptContent(e.target.value)}
+            onKeyDown={handleEditorKeyDown}
+            spellcheck={false}
+            rows={15}
+          />
+        </div>
       </Modal>
 
       <Modal

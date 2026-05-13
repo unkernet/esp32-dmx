@@ -25,14 +25,15 @@ This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX51
 ### Configuration
 | Endpoint | Method | Description | Payload/Response |
 | :--- | :--- | :--- | :--- |
-| `/config` | `GET` | Retrieve current binary configuration. | `app_config_t` binary struct |
+| `/config` | `GET` | Retrieve current configuration and metadata. | Binary `app_config_t` followed by binary `device_meta_t` metadata |
 | `/config` | `PUT` | Update configuration and restart device. | `app_config_t` binary struct |
 
 ### Lua Management
 | Endpoint | Method | Description | Payload/Response |
 | :--- | :--- | :--- | :--- |
 | `/lua/list` | `GET` | List scripts, running status, and last error. | JSON: `{"scripts":[], "running":string, "error":string}` |
-| `/lua/run` | `POST` | Start a Lua script. Auto-kills running script. | Body: Plaintext filename |
+| `/lua/run` | `POST` | Stream and execute Lua code immediately. | Body: Lua code |
+| `/lua/run/*` | `POST` | Run a stored Lua script by filename. | None |
 | `/lua/kill` | `POST` | Gracefully stop the running Lua script. | None |
 | `/lua/scripts/*` | `PUT` | Upload a script or delete it. | Body: Lua code (or empty to delete) |
 | `/lua/scripts/*` | `GET` | Download raw script content. | Plaintext Lua code |

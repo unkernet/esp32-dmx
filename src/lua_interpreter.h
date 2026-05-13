@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include "esp_err.h"
+#include "esp_http_server.h"
 
 /**
  * @brief Initialize the Lua interpreter environment.
@@ -16,6 +17,14 @@ esp_err_t lua_interpreter_init(void);
  * @return ESP_OK if the script started, ESP_ERR_INVALID_STATE if a script is already running.
  */
 esp_err_t lua_interpreter_run(const char *filename);
+
+/**
+ * @brief Run a Lua script from an HTTP stream.
+ * 
+ * @param req The HTTP request handle to read from.
+ * @return ESP_OK if the script started and finished loading.
+ */
+esp_err_t lua_interpreter_run_stream(httpd_req_t *req);
 
 /**
  * @brief Stop the currently running Lua script.

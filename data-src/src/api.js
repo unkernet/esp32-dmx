@@ -28,11 +28,18 @@ export const API = {
   },
 
   async runScript(name) {
-    const res = await fetch('/lua/run', {
-      method: 'POST',
-      body: name
+    const res = await fetch(`/lua/run/${name}`, {
+      method: 'POST'
     });
     if (!res.ok) throw new Error('Failed to start script');
+  },
+
+  async runStream(content) {
+    const res = await fetch('/lua/run/', {
+      method: 'POST',
+      body: content
+    });
+    if (!res.ok) throw new Error('Failed to run stream');
   },
 
   async stopScript() {

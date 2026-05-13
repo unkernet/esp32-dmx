@@ -16,6 +16,15 @@ article p:last-child {
   margin-bottom: 0;
 }
 
+article hr {
+  margin-top: 0;
+}
+
+dialog > article {
+   max-width: 600px;
+   width: 90%;
+}
+
 .layout {
   display: flex;
   min-height: 100vh;
@@ -209,6 +218,7 @@ article > header > button.secondary {
   border-left: 2px solid var(--primary);
 }
 
+.script footer .err,
 .scripts .err {
   color: var(--pico-form-element-invalid-active-border-color);
   font-family: var(--pico-font-family-monospace);
@@ -246,11 +256,39 @@ article > header > button.secondary {
   line-height: 1em;
 }
 
+.script footer {
+  display: flex;
+  align-items: flex-start;
+}
+.script footer .err {
+  flex-grow: 1;
+  text-align: left;
+  max-height: 4em;
+  line-height: 1.2em;
+  overflow-y: auto;
+}
+.script footer button {
+  flex: none;
+}
+.script-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.script-editor textarea {
+  margin-bottom: 0;
+}
+
 .script-src {
   user-select: text;
-  max-height: 70vh;
-  overflow-y: auto;
-  background: transparent;
+  font-family: var(--pico-font-family-monospace);
+  font-size: 0.9rem;
+  line-height: 1.2em;
+  resize: vertical;
+  background-color: var(--pico-form-element-background-color);
+  padding: 0.5rem;
+  white-space: pre;
+  tab-size: 2;
 }
 .s-guide {
   max-height: 70vh;
@@ -259,7 +297,6 @@ article > header > button.secondary {
 }
 .s-guide code, .s-guide pre, .script-src {
   color: color-mix(in srgb, var(--pico-code-color) 30%, var(--pico-primary));
-  
 }
 .s-guide code {
   padding: 0;
@@ -395,3 +432,9 @@ article > header > button.secondary {
     padding: calc(var(--pico-form-element-spacing-vertical) / 2) var(--pico-form-element-spacing-horizontal);
   }
 }
+
+.script-actions {
+  display: flex;
+  gap: 1rem;
+}
+

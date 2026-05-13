@@ -192,7 +192,7 @@ static esp_err_t serve_static_file(httpd_req_t *req)
     if (chunk == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory");
         fclose(f);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to allocate memory");
         return ESP_FAIL;
     }
 
@@ -475,21 +475,26 @@ static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
 }
 
 static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
-    char buf[128];
-    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret <= 0) {
-        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-            httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timed out");
-        }
-        return ESP_FAIL;
+    const char *filename = req->uri + strlen("/lua/run");
+    if (*filename == '/') {
+        filename++;
+    } else if (*filename != '\0') {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
     }
-    buf[ret] = '\0';
 
-    esp_err_t err = lua_interpreter_run(buf);
+    esp_err_t err;
+    if (strlen(filename) > 0) {
+        // Run script from SPIFFS
+        err = lua_interpreter_run(filename);
+    } else {
+        // Run script from HTTP body stream
+        err = lua_interpreter_run_stream(req);
+    }
+
     if (err == ESP_OK) {
         httpd_resp_send(req, NULL, 0);
     } else {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start script");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to run script");
     }
     return ESP_OK;
 }
@@ -544,8 +549,9 @@ static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
 
 static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     const char *filename = req->uri + strlen("/lua/scripts/");
+    
     if (strlen(filename) == 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename missing");
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
         return ESP_FAIL;
     }
 
@@ -555,14 +561,15 @@ static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     if (req->content_len == 0) {
         ESP_LOGI(TAG, "Deleting file: %s", filepath);
         unlink(filepath);
-        httpd_resp_sendstr(req, "File deleted");
+        httpd_resp_set_status(req, "204");
+        httpd_resp_send(req, NULL, 0);
         return ESP_OK;
     }
 
     FILE *f = fopen(filepath, "w");
     if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open file %s for writing", filepath);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
         return ESP_FAIL;
     }
 
@@ -581,6 +588,7 @@ static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     fclose(f);
     free(buf);
 
+    httpd_resp_set_status(req, "201");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
@@ -593,7 +601,7 @@ static const httpd_uri_t get_lua_list_uri = {
 };
 
 static const httpd_uri_t post_lua_run_uri = {
-    .uri      = "/lua/run",
+    .uri      = "/lua/run*",
     .method   = HTTP_POST,
     .handler  = http_post_lua_run_handler,
     .user_ctx = NULL
