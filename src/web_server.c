@@ -5,10 +5,11 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_system.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "esp_spiffs.h"
-#include "hardware_config.h"
+#include "modules.h"
 #include "web_server.h"
 #include "app_config.h"
 #include "app_config_nvs.h"
@@ -34,6 +35,7 @@ typedef struct {
 
 typedef struct __attribute__((packed)) {
     uint8_t supported;
+    char dev_name[5];
     char dmx_name[16];
     char dmx_2_name[16];
 } device_meta_t;
@@ -217,11 +219,17 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
     }
 
     uint8_t supported = MOD_EN_ARTNET_OUT;
-    #if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
-    supported |= MOD_EN_DMX_IN | MOD_EN_DMX_OUT;
+    #ifdef _DMX_RX_EN
+    supported |= MOD_EN_DMX_IN;
     #endif
-    #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
-    supported |= MOD_EN_DMX_2_IN | MOD_EN_DMX_2_OUT;
+    #ifdef _DMX_TX_EN
+    supported |= MOD_EN_DMX_OUT;
+    #endif
+    #ifdef _DMX_2_RX_EN
+    supported |= MOD_EN_DMX_2_IN;
+    #endif
+    #ifdef _DMX_2_TX_EN
+    supported |= MOD_EN_DMX_2_OUT;
     #endif
     #ifdef AMBITFUL_BLE
     supported |= MOD_EN_AMBITFUL;
@@ -233,12 +241,15 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
     supported |= MOD_EN_LUA;
     #endif
 
-
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_send_chunk(req, (const char*)app_config, sizeof(app_config_t));
 
     device_meta_t meta;
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     meta.supported = supported;
+    snprintf(meta.dev_name, sizeof(meta.dev_name), "%02X%02X", mac[4], mac[5]);
+    #ifdef _DMX_EN
     strncpy(meta.dmx_name,
         #ifdef DMX_NAME
         DMX_NAME
@@ -247,6 +258,8 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         #endif
         , sizeof(meta.dmx_name)
     );
+    #endif
+    #ifdef _DMX_2_EN
     strncpy(meta.dmx_2_name,
         #ifdef DMX_2_NAME
         DMX_2_NAME
@@ -255,6 +268,7 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         #endif
         , sizeof(meta.dmx_2_name)
     );
+    #endif
     httpd_resp_send_chunk(req, (const char*)&meta, sizeof(meta));
 
     httpd_resp_send_chunk(req, NULL, 0);

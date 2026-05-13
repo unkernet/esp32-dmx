@@ -10,7 +10,6 @@
 #include "router.h"
 #include "app_config.h"
 
-#define DMX_RTS_PIN       UART_PIN_NO_CHANGE
 #define DMX_BREAK_BITS    23 // 23 * 4 us = 92 us
 #define MIN_DMX_LEN       16
 // #define DMX_BREAK_AFTER_SLOT // Comment this line to send Brake before slot
@@ -197,18 +196,18 @@ esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
     esp_err_t err;
     RETURN_ON_ERROR(uart_driver_install(cfg->uart_num, 600, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3));
     RETURN_ON_ERROR(uart_param_config(cfg->uart_num, &uart_cfg));
-    RETURN_ON_ERROR(uart_set_pin(cfg->uart_num, tx_pin, rx_pin, DMX_RTS_PIN, UART_PIN_NO_CHANGE));
+    RETURN_ON_ERROR(uart_set_pin(cfg->uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     RETURN_ON_NULL(cfg->tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(cfg->tx_sem);
 
-    if ((cfg->enabled & MOD_EN_DMX_IN) != 0) {
+    if ((cfg->enabled & MOD_EN_DMX_IN) != 0 && rx_pin >= 0) {
         TaskHandle_t dmx_rx_task_handle;
         xTaskCreate(dmx_rx_task, "dmx_rx", 2304, cfg, 7, &dmx_rx_task_handle);
         RETURN_ON_NULL(dmx_rx_task_handle, ESP_ERR_NO_MEM);
     } else {
         ESP_LOGI(cfg->instance_name, "rx disabled");
     }
-    if ((cfg->enabled & MOD_EN_DMX_OUT) != 0) {
+    if ((cfg->enabled & MOD_EN_DMX_OUT) != 0 && tx_pin >= 0) {
         if (cfg->repeat_interval == 0) {
             cfg->repeat_interval = 1;
         }

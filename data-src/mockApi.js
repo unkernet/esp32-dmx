@@ -62,6 +62,7 @@ const metaCfg = new Uint8Array(serializeMeta({
     ws2812: true,
     lua: true,
   },
+  dev_name: 'TEST',
   dmx_name: 'DMX',
   dmx_2_name: 'Wireless DMX',
 }));

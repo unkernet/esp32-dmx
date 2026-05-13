@@ -5,13 +5,22 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
-#include "hardware_config.h"
+#include "modules.h"
 #include "dmx.h"
 #include "dmx_common.h"
 #include "router.h"
-#if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
+#ifdef _DMX_EN
 
-#define DMX_UART_NUM      UART_NUM_1
+#define DMX_UART_NUM UART_NUM_1
+#if defined(DMX_EN_PIN) && DMX_EN_PIN < 0
+#undef DMX_EN_PIN
+#endif
+#ifndef DMX_RX_PIN
+#define DMX_RX_PIN (-1)
+#endif
+#ifndef DMX_TX_PIN
+#define DMX_TX_PIN (-1)
+#endif
 
 static const char *TAG = "DMX";
 static app_config_t *app_config;
@@ -28,12 +37,12 @@ void send_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length)
 
 esp_err_t dmx_init(app_config_t *config)
 {
-    #ifdef DMX_EN
-    gpio_set_direction(DMX_EN, GPIO_MODE_OUTPUT);
+    #ifdef DMX_EN_PIN
+    gpio_set_direction(DMX_EN_PIN, GPIO_MODE_OUTPUT);
     #endif
     if ((config->enabled_modules & (MOD_EN_DMX_IN | MOD_EN_DMX_OUT)) == 0) {
-        #ifdef DMX_EN
-        gpio_set_level(DMX_EN, 0);
+        #ifdef DMX_EN_PIN
+        gpio_set_level(DMX_EN_PIN, 0);
         #endif
         ESP_LOGI(TAG, "disabled");
         return ESP_OK;
@@ -54,12 +63,12 @@ esp_err_t dmx_init(app_config_t *config)
 
     RETURN_ON_ERROR(dmx_init_common(dmx_cfg, DMX_TX_PIN, DMX_RX_PIN));
 
-    #ifdef DMX_EN
-    gpio_set_level(DMX_EN, 1);
+    #ifdef DMX_EN_PIN
+    gpio_set_level(DMX_EN_PIN, 1);
     #endif
 
     app_config = config;
 
     return ESP_OK;
 }
-#endif // defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
+#endif // _DMX_EN

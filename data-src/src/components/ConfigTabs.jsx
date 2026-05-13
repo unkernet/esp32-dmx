@@ -3,6 +3,7 @@ import { config } from "../signals";
 
 export function ConfigTabs({ moduleName }) {
   const { value: configValue } = config;
+  const { supported, dmx_name, dmx_2_name } = configValue?.meta || { supported: 0 };
   if (!configValue) return <p>Loading configuration...</p>;
 
   const updateConfig = (key, val) => {
@@ -13,74 +14,78 @@ export function ConfigTabs({ moduleName }) {
     config.value = { ...config.value, enabled_modules: { ...configValue.enabled_modules, [key]: val } };
   };
 
-  const renderDmxConfig = (modulePrefix, labelPrefix) => {
+  const renderDmxConfig = (modulePrefix, labelPrefix, dmxIn, dmxOut) => {
     const endless = configValue[`${modulePrefix}_repeat_time_endless`];
     return <Card title={`${labelPrefix} Configuration`}>
-      <label>
-        <input 
-          type="checkbox" 
-          role="switch" 
-          checked={configValue.enabled_modules[`${modulePrefix}_in`]}
-          onInput={(e) => updateConfigMod(`${modulePrefix}_in`, e.target.checked)} 
-        />
-        Enable Input
-      </label>
-      <FormField label={`Input Universe`} description="Assign incoming DMX data to this universe.">
-        <input 
-          type="number" 
-          min="0" max="32767" 
-          value={configValue[`${modulePrefix}_in_universe`]}
-          onInput={(e) => updateConfig(`${modulePrefix}_in_universe`, parseInt(e.target.value) || 0)} 
-        />
-      </FormField>
-      <label>
-        <input 
-          type="checkbox" 
-          role="switch" 
-          checked={configValue.enabled_modules[`${modulePrefix}_out`]}
-          onInput={(e) => updateConfigMod(`${modulePrefix}_out`, e.target.checked)} 
-        />
-        Enable Output
-      </label>
-      <FormField label={`Output Universe`} description="Output data from this universe to the DMX port.">
-        <input 
-          type="number" 
-          min="0" max="32767" 
-          value={configValue[`${modulePrefix}_out_universe`]}
-          onInput={(e) => updateConfig(`${modulePrefix}_out_universe`, parseInt(e.target.value) || 0)} 
-        />
-      </FormField>
-      <FormField label={`Retransmit Duration (seconds)`} description="Maximum time the system will continue retransmitting the last DMX frame after new data stops arriving.">
+      { dmxIn ? <>
         <label>
           <input 
             type="checkbox" 
             role="switch" 
-            checked={endless}
-            onInput={(e) => {
-              updateConfig(`${modulePrefix}_repeat_time_endless`, e.target.checked);
-              if (!e.target.checked) {
-                updateConfig(`${modulePrefix}_repeat_time`, 60);
-              }
-            }}
+            checked={configValue.enabled_modules[`${modulePrefix}_in`]}
+            onInput={(e) => updateConfigMod(`${modulePrefix}_in`, e.target.checked)} 
           />
-          Endlessly
+          Enable Input
         </label>
-      <input
-          disabled={endless}
-          type={ endless ? "text" : "number" }
-          min="0" max="254"
-          value={configValue[`${modulePrefix}_repeat_time_endless`] ? '∞' : configValue[`${modulePrefix}_repeat_time`]}
-          onInput={(e) => updateConfig(`${modulePrefix}_repeat_time`, parseInt(e.target.value) || 0)} 
-        />
-      </FormField>
-      <FormField label={`Retransmit Interval (ms)`} description="Time between repeated transmissions of the last DMX frame.">
-        <input 
-          type="number" 
-          min="5" max="1275"
-          value={configValue[`${modulePrefix}_repeat_interval`]}
-          onInput={(e) => updateConfig(`${modulePrefix}_repeat_interval`, parseInt(e.target.value) || 0)} 
-        />
-      </FormField>
+        <FormField label={`Input Universe`} description="Assign incoming DMX data to this universe.">
+          <input 
+            type="number" 
+            min="0" max="32767" 
+            value={configValue[`${modulePrefix}_in_universe`]}
+            onInput={(e) => updateConfig(`${modulePrefix}_in_universe`, parseInt(e.target.value) || 0)} 
+          />
+        </FormField>
+        </> : null }
+      { dmxOut ? <>
+        <label>
+          <input 
+            type="checkbox" 
+            role="switch" 
+            checked={configValue.enabled_modules[`${modulePrefix}_out`]}
+            onInput={(e) => updateConfigMod(`${modulePrefix}_out`, e.target.checked)} 
+          />
+          Enable Output
+        </label>
+        <FormField label={`Output Universe`} description="Output data from this universe to the DMX port.">
+          <input 
+            type="number" 
+            min="0" max="32767" 
+            value={configValue[`${modulePrefix}_out_universe`]}
+            onInput={(e) => updateConfig(`${modulePrefix}_out_universe`, parseInt(e.target.value) || 0)} 
+          />
+        </FormField>
+        <FormField label={`Retransmit Duration (seconds)`} description="Maximum time the system will continue retransmitting the last DMX frame after new data stops arriving.">
+          <label>
+            <input 
+              type="checkbox" 
+              role="switch" 
+              checked={endless}
+              onInput={(e) => {
+                updateConfig(`${modulePrefix}_repeat_time_endless`, e.target.checked);
+                if (!e.target.checked) {
+                  updateConfig(`${modulePrefix}_repeat_time`, 60);
+                }
+              }}
+            />
+            Endlessly
+          </label>
+        <input
+            disabled={endless}
+            type={ endless ? "text" : "number" }
+            min="0" max="254"
+            value={configValue[`${modulePrefix}_repeat_time_endless`] ? '∞' : configValue[`${modulePrefix}_repeat_time`]}
+            onInput={(e) => updateConfig(`${modulePrefix}_repeat_time`, parseInt(e.target.value) || 0)} 
+          />
+        </FormField>
+        <FormField label={`Retransmit Interval (ms)`} description="Time between repeated transmissions of the last DMX frame.">
+          <input 
+            type="number" 
+            min="5" max="1275"
+            value={configValue[`${modulePrefix}_repeat_interval`]}
+            onInput={(e) => updateConfig(`${modulePrefix}_repeat_interval`, parseInt(e.target.value) || 0)} 
+          />
+        </FormField>
+      </> : null }
     </Card>
   };
 
@@ -172,8 +177,8 @@ export function ConfigTabs({ moduleName }) {
   return (
     <>
       {moduleName === "DMX" && <div class="grid">
-        { (configValue.meta.supported.dmx_in) && renderDmxConfig('dmx', configValue.meta.dmx_name) }
-        { (configValue.meta.supported.dmx_2_in) && renderDmxConfig('dmx_2', configValue.meta.dmx_2_name) }
+        { (supported.dmx_in || supported.dmx_out) && renderDmxConfig('dmx', dmx_name, supported.dmx_in, supported.dmx_out) }
+        { (supported.dmx_2_in || supported.dmx_2_out) && renderDmxConfig('dmx_2', dmx_2_name, supported.dmx_2_in, supported.dmx_2_out) }
       </div>}
       {moduleName === "Art-Net" && renderArtnetConfig()}
       {moduleName === "Ambitful BLE" && renderBleConfig()}

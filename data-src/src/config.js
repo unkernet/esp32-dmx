@@ -35,20 +35,19 @@ const struct = [
 
 const metaStruct = [
   ['supported', 'u8'],
+  ['dev_name', 's5'],
   ['dmx_name', 's16'],
   ['dmx_2_name', 's16'],
 ];
 
-const enabledModules = {
-  dmx_in    : (1<<0),
-  dmx_out   : (1<<1),
-  artnet_out: (1<<2),
-  ambitful  : (1<<3),
-  ws2812    : (1<<4),
-  lua       : (1<<5),
-  dmx_2_in  : (1<<6),
-  dmx_2_out : (1<<7),
-};
+const enabledModules = [
+  'dmx_in', 'dmx_out',
+  'artnet_out',
+  'ambitful',
+  'ws2812',
+  'lua',
+  'dmx_2_in', 'dmx_2_out',
+];
 
 function structSize(schema) {
   let size = 0;
@@ -159,19 +158,19 @@ function formatIpCidr(ipUint32, cidrLen) {
 
 function parseBitfield(value, fields) {
   const ret = {};
-  for (const field in fields) {
-    ret[field] = (value & fields[field]) > 0;
-  }
+  fields.forEach((key, i) => {
+    ret[key] = (value & (1 << i)) > 0;
+  });
   return ret;
 }
 
 function serializeBitfield(value, fields) {
   let ret = 0;
-  for (const field in fields) {
-    if (value[field]) {
-      ret |= fields[field];
+  fields.forEach((key, i) => {
+    if (value[key]) {
+      ret |= (1 << i);
     }
-  }
+  });
   return ret;
 }
 

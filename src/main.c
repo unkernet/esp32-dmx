@@ -6,7 +6,7 @@
 #include "esp_spiffs.h"
 #include "esp_pm.h"
 #include "driver/gpio.h"
-#include "hardware_config.h"
+#include "modules.h"
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "artnet_server.h"
@@ -16,10 +16,10 @@
 #ifdef WS2812_PIN
 #include "ws2812.h"
 #endif
-#if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
+#ifdef _DMX_EN
 #include "dmx.h"
 #endif
-#if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
+#ifdef _DMX_2_EN
 #include "dmx_2.h"
 #endif
 #include "app_config.h"
@@ -78,10 +78,10 @@ void app_main() {
     #ifdef AMBITFUL_BLE
     LOG_ON_ERROR(ambitful_ble_init(&app_config), TAG, "ambitful_ble_init failed");
     #endif
-    #if defined(DMX_RX_PIN) && defined(DMX_TX_PIN)
+    #ifdef _DMX_EN
     LOG_ON_ERROR(dmx_init(&app_config), TAG, "dmx_init failed");
     #endif
-    #if defined(DMX_2_RX_PIN) && defined(DMX_2_TX_PIN)
+    #ifdef _DMX_2_EN
     LOG_ON_ERROR(dmx_2_init(&app_config), TAG, "dmx_2_init failed");
     #endif
     #ifdef WS2812_PIN

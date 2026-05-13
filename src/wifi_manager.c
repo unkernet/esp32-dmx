@@ -11,7 +11,7 @@
 #include "esp_mac.h"
 #include "driver/gpio.h"
 #include "wifi_manager.h"
-#include "hardware_config.h"
+#include "modules.h"
 
 #define WIFI_CONNECT_ATTEMPTS     8
 #define WIFI_CONNECT_TIMEOUT_MS  (20 * 1000)
@@ -48,7 +48,9 @@ static bool led_level = false;
 static void led_hw_set(bool on)
 {
     /* active low */
+    #ifdef LED_GPIO
     gpio_set_level(LED_GPIO, on ? 0 : 1);
+    #endif
 }
 
 static void led_timer_cb(TimerHandle_t t)
@@ -93,9 +95,11 @@ static void led_off(void)
 
 static void led_init(void)
 {
+    #ifdef LED_GPIO
     gpio_reset_pin(LED_GPIO);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     led_off();
+    #endif
 }
 
 /* ---------- forward ---------- */

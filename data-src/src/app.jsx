@@ -57,7 +57,7 @@ export function App() {
   // Filter tabs based on supported modules
   const filteredTabs = useMemo(() => {
     const supportedMap = {
-      dmx: ['dmx_in', 'dmx_2_in'],
+      dmx: ['dmx_in', 'dmx_out', 'dmx_2_in', 'dmx_2_out'],
       ble: ['ambitful'],
       ws2812: ['ws2812'],
       scripting: ['lua'],

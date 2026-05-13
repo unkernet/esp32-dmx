@@ -2,6 +2,7 @@ import { Card, FormField, Modal } from "./Common";
 import { API } from "../api";
 import { Clock, HardDrive, RefreshCcw } from "lucide-preact";
 import { useEffect, useState } from 'preact/hooks';
+import { config } from "../signals";
 
 let updateTmr;
 
@@ -27,6 +28,9 @@ function MemUsage({ mem, label }) {
 export function SystemTab() {
   const [systemStatus, setSystemStatus] = useState(null);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
+  const { value: configValue } = config;
+  const dev_name = configValue?.meta?.dev_name;
+
 
   const handleReboot = async () => {
     try {
@@ -64,6 +68,16 @@ export function SystemTab() {
 
   return (
     <Card title="System Information" class="sysinfo">
+      { dev_name ? 
+        <FormField>
+          <p>
+            <strong>ESP-DMX-{dev_name}</strong><br/>
+            <a href={`http://esp-dmx.local/`}>{`http://esp-dmx.local/`}</a><br/>
+            <a href={`http://esp-dmx-${dev_name.toLocaleLowerCase()}.local/`}>{`http://esp-dmx-${dev_name.toLocaleLowerCase()}.local/`}</a><br/>
+          </p>
+        </FormField>
+        : null }
+
       <FormField label="Uptime">
         <p style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Clock size={20} />
