@@ -32,7 +32,7 @@ This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX51
 | Endpoint | Method | Description | Payload/Response |
 | :--- | :--- | :--- | :--- |
 | `/lua/list` | `GET` | List scripts, running status, and last error. | JSON: `{"scripts":[], "running":string, "error":string}` |
-| `/lua/run` | `POST` | Stream and execute Lua code immediately. | Body: Lua code |
+| `/lua/run/` | `POST` | Stream and execute Lua code immediately. | Body: Lua code |
 | `/lua/run/*` | `POST` | Run a stored Lua script by filename. | None |
 | `/lua/kill` | `POST` | Gracefully stop the running Lua script. | None |
 | `/lua/scripts/*` | `PUT` | Upload a script or delete it. | Body: Lua code (or empty to delete) |

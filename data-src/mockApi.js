@@ -11,6 +11,7 @@ luaScripts.set('init.lua', `while true do
   end
   sleep(10)
 end`);
+luaScripts.set('bin.luac', ``);
 let runningScript = 'init.lua';
 let lastError = null;
 const start = Date.now();
@@ -127,6 +128,16 @@ export const mockApi = {
         if (runningScript === 'error.lua') {
             lastError = 'Error: Mock runtime error';
             runningScript = null;
+        }
+        if (runningScript === '|') {
+          let data = '';
+          req.on('data', chunk => { data += chunk; });
+          req.on('end', () => {
+            if (data.includes('error')) {
+              lastError = 'Error: Mock runtime error';
+              runningScript = null;
+            }
+          });
         }
         res.end('OK');
         return;

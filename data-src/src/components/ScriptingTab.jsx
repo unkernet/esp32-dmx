@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import { API } from "../api";
 import { Card, Modal } from "./Common";
 import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle, Plus, Save } from "lucide-preact";
+// import { ccs } from '../util';
 
 export function ScriptingTab() {
   const [scripts, setScripts] = useState([]);
@@ -22,8 +23,11 @@ export function ScriptingTab() {
     try {
       setLoading(true);
       const data = await API.getScripts();
-      setScripts(data.scripts || []);
+      if (data.running === '|') {
+        data.scripts.unshift('|');
+      }
       setRunningScript(data.running || null);
+      setScripts(data.scripts || []);
       setScriptError(data.error || null);
     } catch (e) {
       alert("Failed to fetch scripts: " + e.message);
@@ -182,10 +186,10 @@ export function ScriptingTab() {
   const refreshBtn = (
     <>
       <button onClick={() => setShowGuideModal(true)} title="Scripting Guide">
-        <HelpCircle size={20} />
+        <HelpCircle />
       </button>
       <button onClick={fetchScripts} title="Refresh List" aria-busy={loading}>
-        { loading ? null : <RefreshCcw size={20} /> }
+        { loading ? null : <RefreshCcw /> }
       </button>
     </>
   );
@@ -194,11 +198,10 @@ export function ScriptingTab() {
     <>
       <Card
         title="Lua Scripts"
-        // notice={`Only ~120KB of memory is available for Lua scripting.\nRunning complex scripts may impact device performance.`}
         btn={refreshBtn}
         class="scripts"
       >
-        <div class="description">{`Only ~120KB of memory is available for Lua scripting.\nRunning complex scripts may impact device performance.`}</div>
+        <div class="description">{`Running complex scripts may impact device performance.`}</div>
         <p class="script-actions">
           <button class="outline" onClick={handleNewScript} disabled={loading}>
             <Plus size={20} style={{ marginRight: "10px" }} />
@@ -212,7 +215,7 @@ export function ScriptingTab() {
             type="file" 
             ref={fileInputRef} 
             style={{ display: "none" }} 
-            accept=".lua"
+            accept=".lua,.luac"
             multiple
             onChange={(e) => uploadFiles(e.target.files)}
           />
@@ -227,22 +230,25 @@ export function ScriptingTab() {
           ) : (
             scripts.map((script) => {
               const running = runningScript === script;
+              const temp = running && script === '|';
+              const name = temp ? '📝' : script;
+              const luac = name.endsWith('.luac');
               return <li key={script} class={running ? "run" : null}>
-                <span>{script}</span>
+                <span>{name}</span>
                 <div>
                   {running ? (
-                    <button class="secondary" onClick={handleStopScript} title="Stop Script">
+                    <button class="" onClick={handleStopScript} title="Stop Script">
                       <StopCircle size={20} />
                     </button>
                   ) : (
-                    <button class="secondary" onClick={() => handleRunScript(script)} title="Run Script">
+                    <button class="outline" onClick={() => handleRunScript(script)} title="Run Script">
                       <PlayBtn size={20} />
                     </button>
                   )}
-                  <button class="secondary" onClick={() => handleViewScript(script)} title="View Script">
+                  <button class="outline" disabled={temp || luac} onClick={() => handleViewScript(script)} title="View Script">
                     <FileText size={20} />
                   </button>
-                  <button class="secondary" onClick={() => handleDeleteScript(script)} title="Delete Script">
+                  <button class="outline" disabled={temp}  onClick={() => handleDeleteScript(script)} title="Delete Script">
                     <Trash2 size={20} />
                   </button>
                 </div>
@@ -260,8 +266,7 @@ export function ScriptingTab() {
         footer={
           <>
             { scriptError && !hideError ? <div class="err">{scriptError}</div> : null }
-            {/* <button class="secondary outline" onClick={() => setShowContentModal(false)}>Close</button> */}
-            <button class="secondary" onClick={handleRunStream} title="Run without saving">
+            <button class={(runningScript !== '|' || hideError) && "outline"} onClick={handleRunStream} title="Run without saving">
               <PlayBtn size={20} /> Run
             </button>
             <button onClick={handleSaveScript} disabled={!currentScriptFileName} title="Save to flash">
@@ -270,23 +275,21 @@ export function ScriptingTab() {
           </>
         }
       >
-        <div class="script-editor">
-          <input 
-            type="text" 
-            placeholder="Filename (e.g. effect.lua)" 
-            value={currentScriptFileName}
-            onInput={(e) => setCurrentScriptFileName(e.target.value)}
-          />
-          <textarea 
-            ref={editorRef}
-            class="script-src"
-            value={currentScriptContent}
-            onInput={(e) => setCurrentScriptContent(e.target.value)}
-            onKeyDown={handleEditorKeyDown}
-            spellcheck={false}
-            rows={15}
-          />
-        </div>
+        <input 
+          type="text" 
+          placeholder="Filename (e.g. effect.lua)" 
+          value={currentScriptFileName}
+          onInput={(e) => setCurrentScriptFileName(e.target.value)}
+        />
+        <textarea 
+          ref={editorRef}
+          class="script-src"
+          value={currentScriptContent}
+          onInput={(e) => setCurrentScriptContent(e.target.value)}
+          onKeyDown={handleEditorKeyDown}
+          spellcheck={false}
+          rows={15}
+        />
       </Modal>
 
       <Modal

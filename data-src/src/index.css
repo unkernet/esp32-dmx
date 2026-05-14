@@ -55,20 +55,27 @@ dialog > article {
   padding: 0;
   margin: 0 !important;
   flex-direction: column;
-  align-items: flex-start;
+  /* align-items: flex-start; */
+  align-items: stretch;
 }
 .sidebar li {
-  padding: 0;
+  padding: .25em;
+}
+.sidebar li:not(:has(.secondary)) {
+  background-color: color-mix(in srgb, var(--pico-primary-focus), transparent);
 }
 .sidebar li a {
   margin: 0;
   display: flex;
   align-items: center;
-  padding: .5rem 1rem;
+  padding: .25rem .75rem;
   text-decoration: none;
   white-space: nowrap;
 }
-
+.sidebar li a svg,
+.sidebar li a:after {
+  flex: none
+}
 .sidebar li a:after {
   content: attr(title);
   margin-left: 1rem;
@@ -156,6 +163,13 @@ div .scan-btn {
   content: attr(data-val);
 }
 
+button.green {
+  color: color-mix(in srgb, var(--pico-ins-color), currentColor);
+}
+button.red {
+  color: color-mix(in srgb, var(--pico-del-color), currentColor);
+}
+
 article > header:has(>button) {
   display: flex;
   align-items: center;
@@ -165,10 +179,16 @@ article > header:has(>button) > strong {
   flex-grow: 1;
 }
 article > header > button {
-  padding: 4px 8px;
+  padding: 8px;
+  line-height: 1em;
+  font-size: 24px;
   min-width: 45px;
   flex: none;
   margin-left: 1ch;
+}
+article > header > button > svg {
+  vertical-align: bottom;
+  width: 1em; height: 1em;
 }
 article > header > button.secondary {
   opacity: .5;
@@ -256,9 +276,14 @@ article > header > button.secondary {
   line-height: 1em;
 }
 
+.script article {
+  display: flex;
+  flex-direction: column;
+}
 .script footer {
   display: flex;
   align-items: flex-start;
+  justify-content: flex-end;
 }
 .script footer .err {
   flex-grow: 1;

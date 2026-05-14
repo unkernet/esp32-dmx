@@ -93,7 +93,7 @@ void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) 
 }
 
 static esp_err_t http_get_status_handler(httpd_req_t *req) {
-    char json_buf[256]; // Sufficient for the JSON response
+    char json_buf[120]; // Sufficient for the JSON response
     int64_t uptime_us = esp_timer_get_time();
 
     uint32_t heap_total = heap_caps_get_total_size(MALLOC_CAP_8BIT);
@@ -102,18 +102,18 @@ static esp_err_t http_get_status_handler(httpd_req_t *req) {
     uint32_t heap_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
 
     snprintf(json_buf, sizeof(json_buf),
-             "{"
-               "\"uptime\": %lld,"
-               "\"heap\":{"
-                 "\"total\": %u,"
-                 "\"free\": %u,"
-                 "\"block\": %u,"
-                 "\"min\": %u"
-               "}"
-             "}",
-             uptime_us / 1000000,
-             heap_total, heap_free, heap_free_block, heap_min_free
-            );
+        "{"
+            "\"uptime\":%lld,"
+            "\"heap\":{"
+                "\"total\":%u,"
+                "\"free\":%u,"
+                "\"block\":%u,"
+                "\"min\":%u"
+            "}"
+        "}",
+        uptime_us / 1000000,
+        heap_total, heap_free, heap_free_block, heap_min_free
+    );
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json_buf);
@@ -474,12 +474,7 @@ static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
 }
 
 static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
-    const char *filename = req->uri + strlen("/lua/run");
-    if (*filename == '/') {
-        filename++;
-    } else if (*filename != '\0') {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
-    }
+    const char *filename = req->uri + strlen("/lua/run/");
 
     esp_err_t err;
     if (strlen(filename) > 0) {
@@ -602,7 +597,7 @@ static const httpd_uri_t get_lua_list_uri = {
 };
 
 static const httpd_uri_t post_lua_run_uri = {
-    .uri      = "/lua/run*",
+    .uri      = "/lua/run/*",
     .method   = HTTP_POST,
     .handler  = http_post_lua_run_handler,
     .user_ctx = NULL

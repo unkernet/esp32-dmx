@@ -111,8 +111,8 @@ export function App() {
             <li key={tab.id} class={tab.className}>
               <a 
                 href="#" 
-                class={activeTab.value === tab.id ? "" : "secondary outline"}
-                onClick={() => activeTab.value = tab.id}
+                class={activeTab.value === tab.id ? "" : "secondary"}
+                onClick={(e) => { activeTab.value = tab.id; e.preventDefault(); }}
                 title={tab.label}
               >
                 { typeof (tab.icon) === 'string' ? <span dangerouslySetInnerHTML={tab.icon} /> : <tab.icon size={24} />}

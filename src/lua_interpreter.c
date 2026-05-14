@@ -221,7 +221,13 @@ static void lua_task(void *pvParameters) {
             lua_setfield(L, -2, restricted[i]);
         }
     }
-    lua_pop(L, 1); // pop os table
+    lua_pop(L, 1); // pop os
+    lua_getglobal(L, "package");
+    if (lua_istable(L, -1)) {
+        lua_pushliteral(L, "/spiffs/?.luac;/spiffs/?.lua;/spiffs/?/init.luac;/spiffs/?/init.lua");
+        lua_setfield(L, -2, "path");
+    }
+    lua_pop(L, 1); // pop package
 
     // Register dmx library
     const luaL_Reg dmx_lib[] = {
@@ -339,9 +345,9 @@ esp_err_t lua_interpreter_run_stream(httpd_req_t *req) {
     lua_load_ctx_t ctx = {
         .filename = NULL,
         .req = req,
-        .buf = malloc(ctx.buf_len),
         .buf_len = 512,
     };
+    ctx.buf = malloc(ctx.buf_len);
     if (!ctx.buf) return ESP_ERR_NO_MEM;
 
     esp_err_t err = lua_interpreter_run_internal(&ctx);
