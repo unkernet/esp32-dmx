@@ -17,6 +17,8 @@
 #include "wifi_manager.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "util.h"
+#include "modules.h"
 #ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
 #endif
@@ -24,8 +26,6 @@
 #if ( ( configUSE_TRACE_FACILITY == 1 ) && ( configUSE_STATS_FORMATTING_FUNCTIONS > 0 ) )
 #define TASK_LIST
 #endif
-
-#define MAX_DATA_SIZE 512
 
 typedef struct {
     httpd_handle_t handle;
@@ -43,7 +43,7 @@ typedef struct __attribute__((packed)) {
 static const char *TAG = "WEB_SERVER";
 static ws_client_info_t active_ws_client = { .handle = NULL, .fd = -1, .active = false };
 static SemaphoreHandle_t ws_mutex = NULL;
-static uint8_t ws_tx_buf[MAX_DATA_SIZE + 2];
+static uint8_t ws_tx_buf[DMX_LEN + 2];
 static size_t ws_tx_len = 0;
 static TaskHandle_t ws_send_task_handle = NULL;
 static SemaphoreHandle_t ws_buffer_mutex = NULL;
@@ -81,7 +81,7 @@ void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) 
     }
 
     if (xSemaphoreTake(ws_buffer_mutex, 0) == pdTRUE) {
-        if (length > MAX_DATA_SIZE) length = MAX_DATA_SIZE;
+        if (length > DMX_LEN) length = DMX_LEN;
         ws_tx_buf[0] = universe & 0xff;
         ws_tx_buf[1] = universe >> 8;
         memcpy(ws_tx_buf + 2, data, length);
@@ -158,8 +158,8 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 
 static esp_err_t serve_static_file(httpd_req_t *req)
 {
-    char base_filepath[128]; // Path without /spiffs and without .gz
-    char full_filepath_gz[128]; // Full path including /spiffs and .gz
+    char base_filepath[48]; // Path without /spiffs and without .gz
+    char full_filepath_gz[48]; // Full path including /spiffs and .gz
     const char *uri = req->uri;
 
     // Determine the base file path (e.g., /index.html or /index.js)
@@ -170,7 +170,6 @@ static esp_err_t serve_static_file(httpd_req_t *req)
         base_filepath[sizeof(base_filepath) - 1] = '\0';
     }
 
-    // Construct the full file path in SPIFFS
     snprintf(full_filepath_gz, sizeof(full_filepath_gz), "/spiffs%s.gz", base_filepath);
 
     struct stat st;
@@ -256,7 +255,7 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         #else
         "DMX"
         #endif
-        , sizeof(meta.dmx_name)
+        , sizeof(meta.dmx_name) - 1
     );
     #endif
     #ifdef _DMX_2_EN
@@ -266,7 +265,7 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         #else
         "DMX 2"
         #endif
-        , sizeof(meta.dmx_2_name)
+        , sizeof(meta.dmx_2_name) - 1
     );
     #endif
     httpd_resp_send_chunk(req, (const char*)&meta, sizeof(meta));
@@ -471,7 +470,7 @@ static const httpd_uri_t get_wifi_scan_uri = {
 
 #ifdef LUA_INTERPRETER
 static esp_err_t http_get_lua_list_handler(httpd_req_t *req) {
-    return lua_interpreter_stream_scripts(req);
+    return lua_interpreter_list_scripts(req);
 }
 
 static esp_err_t http_post_lua_run_handler(httpd_req_t *req) {
@@ -510,12 +509,13 @@ static esp_err_t http_post_lua_kill_handler(httpd_req_t *req) {
 
 static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
     const char *filename = req->uri + strlen("/lua/scripts/");
-    if (strlen(filename) == 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename missing");
+    size_t len = strlen(filename);
+    if (len == 0 || len > 30) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
         return ESP_FAIL;
     }
 
-    char filepath[128];
+    char filepath[48];
     snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
 
     struct stat st;
@@ -526,7 +526,7 @@ static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
 
     FILE *f = fopen(filepath, "r");
     if (f == NULL) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file");
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
         return ESP_FAIL;
     }
 
@@ -549,13 +549,14 @@ static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
 
 static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     const char *filename = req->uri + strlen("/lua/scripts/");
-    
-    if (strlen(filename) == 0) {
+    size_t len = strlen(filename);
+
+    if (len == 0 || len > 30 || (!ends_with(filename, ".lua") && !ends_with(filename, ".luac"))) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
         return ESP_FAIL;
     }
 
-    char filepath[128];
+    char filepath[48];
     snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
 
     if (req->content_len == 0) {

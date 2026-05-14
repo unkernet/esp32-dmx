@@ -4,14 +4,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ws2812.h"
-#include "hardware_config.h"
+#include "modules.h"
 
 #ifndef WS2812_PIN
 #define WS2812_PIN -1
 #endif
 
 #define WS2812_RESET_US 75
-#define MAX_DATA_LEN 512
 static const char *TAG = "WS_2812";
 
 static TaskHandle_t tx_task = NULL;
@@ -55,8 +54,8 @@ void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) 
         return;
     }
 
-    if (length > MAX_DATA_LEN) {
-        length = MAX_DATA_LEN;
+    if (length > WS2812_LEN) {
+        length = WS2812_LEN;
     }
 
     memcpy(tx_data, data, length);
@@ -70,7 +69,7 @@ esp_err_t ws2812_init(app_config_t *config) {
         return ESP_OK; // Disabled
     }
 
-    RETURN_ON_NULL(tx_data = malloc(MAX_DATA_LEN), ESP_ERR_NO_MEM);
+    RETURN_ON_NULL(tx_data = malloc(WS2812_LEN), ESP_ERR_NO_MEM);
 
     rmt_tx_channel_config_t tx_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,

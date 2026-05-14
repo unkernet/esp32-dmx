@@ -25,6 +25,9 @@
 #if (defined(WS2812_PIN) && (WS2812_PIN) < 0)
     #undef WS2812_PIN
 #endif
+#ifndef WS2812_LEN
+    #define WS2812_LEN (DMX_LEN)
+#endif
 
 #if (defined(LED_GPIO) && (LED_GPIO) < 0)
     #undef LED_GPIO

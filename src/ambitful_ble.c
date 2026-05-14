@@ -8,6 +8,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "modules.h"
 
 static const char *TAG = "AMBUTFUL";
 
@@ -348,7 +349,7 @@ esp_err_t ambitful_ble_init(app_config_t *config)
     if (config->ambitful_groups > MAX_AMBITFUL_GROUPS) {
         config->ambitful_groups = MAX_AMBITFUL_GROUPS;
     }
-    if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= 512) {
+    if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= DMX_LEN) {
         return ESP_ERR_INVALID_SIZE; // Invalid configuration
     }
     memset(groups_priority, 0, sizeof(groups_priority));

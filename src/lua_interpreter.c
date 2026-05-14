@@ -8,6 +8,8 @@
 #include "esp_spiffs.h"
 #include "app_config.h"
 #include "router.h"
+#include "util.h"
+#include "modules.h"
 #include "esp_random.h"
 #include <dirent.h>
 #include <string.h>
@@ -15,7 +17,6 @@
 
 #define DATA_NOTIFY (0) // Increase CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES if set greater then 0
 #define EMPTY (-1)
-#define MAX_DATA_LEN 512
 #define C_SCRIPT_LEN 64
 #define ERROR_LEN 128
 static const char *TAG = "LUA";
@@ -28,7 +29,7 @@ typedef struct {
     
     // DMX Data exchange
     SemaphoreHandle_t dmx_data_sem;
-    uint8_t dmx_buffer[MAX_DATA_LEN];
+    uint8_t dmx_buffer[DMX_LEN];
     uint16_t dmx_buffer_len;
     uint16_t listen_universe;
     uint16_t buffered_universe;
@@ -63,12 +64,11 @@ static int l_dmx_send(lua_State *L) {
     } else if (type == LUA_TSTRING) {
         size_t str_len;
         const char *str = lua_tolstring(L, 2, &str_len);
-        size_t len = (str_len > 512) ? 512 : str_len;
-        route_dmx_data(debug ? DATA_SOURCE_LUA_DEBUG : DATA_SOURCE_LUA, universe, (const uint8_t *)str, len);
+        route_dmx_data(debug ? DATA_SOURCE_LUA_DEBUG : DATA_SOURCE_LUA, universe, (const uint8_t *)str, str_len);
     } else {
         return luaL_error(L, "DMX data must be a table or string");
     }
-    
+
     // Script will run much more stable with regular garbage collection
     lua_gc(L, LUA_GCCOLLECT, 0);
 
@@ -102,7 +102,7 @@ void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
     }
 
     if (xSemaphoreTake(S->dmx_data_sem, 0) == pdTRUE) {
-        S->dmx_buffer_len = (length > MAX_DATA_LEN) ? MAX_DATA_LEN : length;
+        S->dmx_buffer_len = (length > DMX_LEN) ? DMX_LEN : length;
         memcpy(S->dmx_buffer, data, S->dmx_buffer_len);
         S->buffered_universe = universe;
         xSemaphoreGive(S->dmx_data_sem);
@@ -206,10 +206,34 @@ static void lua_task(void *pvParameters) {
     }
 
     luaL_openlibs(L);
+
+    // Remove prohibited libraries and functions
+    lua_pushnil(L);
+    lua_setglobal(L, "io");
+    lua_pushnil(L);
+    lua_setglobal(L, "warn");
+
+    lua_getglobal(L, "os");
+    if (lua_istable(L, -1)) {
+        const char *restricted[] = {"execute", "getenv", "remove", "rename", "tmpname", "exit", "setlocale", NULL};
+        for (int i = 0; restricted[i]; i++) {
+            lua_pushnil(L);
+            lua_setfield(L, -2, restricted[i]);
+        }
+    }
+    lua_pop(L, 1); // pop os table
+
+    // Register dmx library
+    const luaL_Reg dmx_lib[] = {
+        {"send", l_dmx_send},
+        {"read", l_dmx_read},
+        {NULL, NULL}
+    };
+    lua_newtable(L);
+    luaL_setfuncs(L, dmx_lib, 0);
+    lua_setglobal(L, "dmx");
     
-    // Register custom functions
-    lua_register(L, "dmx_send", l_dmx_send);
-    lua_register(L, "dmx_read", l_dmx_read);
+    // Register global custom functions
     lua_register(L, "random", l_random);
     lua_register(L, "sleep", l_sleep);
     lua_register(L, "print", l_print);
@@ -233,7 +257,7 @@ static void lua_task(void *pvParameters) {
         ESP_LOGE(TAG, "Lua load error: %s", error);
         strncpy(S->last_error, error, ERROR_LEN - 1);
         S->last_error[ERROR_LEN - 1] = '\0';
-        ctx->result = ESP_FAIL;
+        ctx->result = ESP_OK;
         xSemaphoreGive(ctx->load_sem);
     } else {
         strncpy(S->current_script, ctx->filename ? ctx->filename : "|", C_SCRIPT_LEN - 1);
@@ -315,9 +339,9 @@ esp_err_t lua_interpreter_run_stream(httpd_req_t *req) {
     lua_load_ctx_t ctx = {
         .filename = NULL,
         .req = req,
+        .buf = malloc(ctx.buf_len),
         .buf_len = 512,
     };
-    ctx.buf = malloc(ctx.buf_len);
     if (!ctx.buf) return ESP_ERR_NO_MEM;
 
     esp_err_t err = lua_interpreter_run_internal(&ctx);
@@ -360,7 +384,7 @@ bool lua_interpreter_is_running(void) {
     return S && S->task_handle != NULL;
 }
 
-esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
+esp_err_t lua_interpreter_list_scripts(httpd_req_t *req) {
     DIR *dir = opendir("/spiffs");
     if (dir == NULL) {
         httpd_resp_sendstr(req, "{\"scripts\":[],\"running\":null,\"error\":null}");
@@ -373,8 +397,8 @@ esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req) {
     struct dirent *ent;
     bool first = true;
     while ((ent = readdir(dir)) != NULL) {
-        if (strstr(ent->d_name, ".lua")) {
-            char buf[128];
+        if (ends_with(ent->d_name, ".lua") || ends_with(ent->d_name, ".luac")) {
+            char buf[48];
             int len = snprintf(buf, sizeof(buf), "%s\"%s\"", first ? "" : ",", ent->d_name);
             httpd_resp_send_chunk(req, buf, len);
             first = false;

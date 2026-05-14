@@ -5,9 +5,10 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "router.h"
+#include "modules.h"
 
-/** @brief DMX buffer size (start code + 512 + break) */
-#define DMX_BUF_SIZE      514 
+/** @brief DMX buffer size (start code + DMX_LEN + break) */
+#define DMX_BUF_SIZE (DMX_LEN + 2) 
 
 /**
  * @brief DMX frame structure.

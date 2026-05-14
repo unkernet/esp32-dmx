@@ -205,8 +205,8 @@ static bool wifi_start_sta(void)
     }
 
     wifi_config_t wc = {0};
-    strncpy((char *)wc.sta.ssid, cfg->sta_ssid, sizeof(wc.sta.ssid));
-    strncpy((char *)wc.sta.password, cfg->sta_password, sizeof(wc.sta.password));
+    strncpy((char *)wc.sta.ssid, cfg->sta_ssid, sizeof(wc.sta.ssid) - 1);
+    strncpy((char *)wc.sta.password, cfg->sta_password, sizeof(wc.sta.password) - 1);
     wc.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     esp_wifi_set_mode(WIFI_MODE_STA);
@@ -252,8 +252,8 @@ static void wifi_start_ap(void)
     led_blink_start();
 
     wifi_config_t wc = {0};
-    strncpy((char *)wc.ap.ssid, cfg->ap_ssid, sizeof(wc.ap.ssid));
-    strncpy((char *)wc.ap.password, cfg->ap_password, sizeof(wc.ap.password));
+    strncpy((char *)wc.ap.ssid, cfg->ap_ssid, sizeof(wc.ap.ssid) - 1);
+    strncpy((char *)wc.ap.password, cfg->ap_password, sizeof(wc.ap.password) - 1);
     wc.ap.max_connection = 4;
     wc.ap.authmode = strlen(cfg->ap_password) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
 

@@ -312,11 +312,11 @@ export function ScriptingTab() {
           <h4>Functions:</h4>
           <ul>
             <li>
-              <code>dmx_send(universe, data, network)</code><br/>
+              <code>dmx.send(universe, data, network)</code><br/>
               Transmit data. <code>data</code> should be a binary string (e.g., from <code>string.char</code>). If <code>network</code> is true, data is also sent via Art-Net and WebSocket.
             </li>
             <li>
-              <code>dmx_read(universe, timeout)</code><br/>
+              <code>dmx.read(universe, timeout)</code><br/>
               Wait up to <code>timeout</code> ms for data. Returns binary string or <code>nil</code>.
             </li>
             <li>
@@ -336,9 +336,9 @@ export function ScriptingTab() {
           <h4>Example:</h4>
           <pre style={{ background: "var(--pico-code-background)", padding: "10px" }}>{
 `while true do
-  local data = dmx_read(1, 100)
+  local data = dmx.read(1, 100)
   if data then
-    dmx_send(2, data)
+    dmx.send(2, data)
   end
   sleep(100)
 end`

@@ -48,7 +48,7 @@ bool lua_interpreter_is_running(void);
  * @param req The HTTP request handle to stream to.
  * @return ESP_OK on success.
  */
-esp_err_t lua_interpreter_stream_scripts(httpd_req_t *req);
+esp_err_t lua_interpreter_list_scripts(httpd_req_t *req);
 
 void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length);
 

@@ -47,12 +47,12 @@ This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX51
 
 ## Lua Scripting API
 
-Lua scripts usually include an **endless loop** to process or generate DMX data in real-time.
+Lua scripts usually include an **endless loop** to process or generate DMX data in real-time. The environment is **sandboxed**: the `io` library and sensitive `os` functions (`execute`, `exit`, `getenv`, etc.) are removed for security.
 
 **Functions available in Lua scripts:**
 
-*   **`dmx_send(universe: number, data: binary string, debug: boolean)`**: Transmit DMX `data` (binary string of 512 bytes max) to the specified `universe`. If `debug` is `true`, the data will also be forwarded via Art-Net and WebSockets for monitoring.
-*   **`dmx_read(universe: number, timeout: number)`**: Waits up to `timeout` milliseconds for new DMX data for the specified `universe`. Returns a `binary string` with the received data or `nil` if the `timeout` is reached.
+*   **`dmx.send(universe: number, data: binary string, debug: boolean)`**: Transmit DMX `data` (binary string of 512 bytes max) to the specified `universe`. If `debug` is `true`, the data will also be forwarded via Art-Net and WebSockets for monitoring.
+*   **`dmx.read(universe: number, timeout: number)`**: Waits up to `timeout` milliseconds for new DMX data for the specified `universe`. Returns a `binary string` with the received data or `nil` if the `timeout` is reached.
 *   **`random(min: number, max: number)`**: Generates a true random integer.
     *   `random()`: Returns a full 32-bit integer.
     *   `random(max)`: Returns a random integer between 1 and `max` (inclusive).

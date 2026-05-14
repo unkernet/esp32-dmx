@@ -1,6 +1,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_mac.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
@@ -9,7 +10,7 @@
 #include "app_config.h"
 #include "esp_netif.h"
 #include "router.h"
-#include "freertos/semphr.h"
+#include "modules.h"
 
 // Art-Net Constants
 #define ARTNET_PORT 6454
@@ -82,7 +83,7 @@ typedef struct __attribute__((packed)) {
     uint8_t physical;
     uint16_t universe;
     uint16_t length; // BE
-    uint8_t data[512];
+    uint8_t data[DMX_LEN];
 } artdmx_packet_t;
 
 typedef struct {
@@ -172,7 +173,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
     uint16_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
 
-    if (length > 512 || len < sizeof(artdmx_packet_t) - (512 - length)) {
+    if (length > DMX_LEN || len < sizeof(artdmx_packet_t) - (DMX_LEN - length)) {
         ESP_LOGW(TAG, "Received malformed ArtDMX packet (len: %d)", len);
         // Received malformed ArtDMX packet
         return;
@@ -271,7 +272,7 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
     }
 
     if (++sequence == 0) sequence = 1;
-    if (length > 512) length = 512;
+    if (length > DMX_LEN) length = DMX_LEN;
 
     artdmx_packet_t *pkt = (artdmx_packet_t *)tx_packet.buffer;
 
