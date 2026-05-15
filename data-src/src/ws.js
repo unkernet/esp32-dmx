@@ -1,4 +1,4 @@
-import { wsStatus, monitorData } from "./signals";
+import { wsStatus, monitorData, monitorHistory } from "./signals";
 
 let ws = null;
 let lastSendTmr = null;
@@ -13,19 +13,18 @@ export const WS = {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws`;
+    // const wsUrl = 'ws://esp-dmx.local/ws';
 
     ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
       wsStatus.value = "connected";
-      console.log("WS Connected");
     };
 
     ws.onclose = () => {
       wsStatus.value = "disconnected";
       ws = null;
-      console.log("WS Disconnected");
     };
 
     ws.onerror = (err) => {
@@ -48,6 +47,15 @@ export const WS = {
             current[universe] = data;
           }
           monitorData.value = current;
+
+          // Update history
+          // Sending only one signal, monitorData, is enought
+          // const h = { ...monitorHistory.value };
+          const h = monitorHistory.value;
+          if (!h[universe]) h[universe] = [];
+          h[universe].push(data);
+          if (h[universe].length > 100) h[universe].shift();
+          // monitorHistory.value = h;
         }
       }
     };

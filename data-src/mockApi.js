@@ -203,7 +203,7 @@ export const mockApi = {
           if (d > 10) {
             data[i + 2] = 0;
           } else {
-            data[i + 2] = (10 - d) * 25;
+            data[i + 2] = (Math.cos(d / 10 * Math.PI) + 1) / 2 * 255;
           }
         }
         frame++;

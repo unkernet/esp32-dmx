@@ -38,9 +38,9 @@ export function ScriptingTab() {
   const uploadFiles = async (files) => {
     setLoading(true);
     for (const file of Array.from(files)) {
-      if (file.name.endsWith('.lua')) {
+      if (file.name.endsWith('.lua') || file.name.endsWith('.luac')) {
         try {
-          const content = await file.text();
+          const content = await file.arrayBuffer();
           await API.uploadScript(file.name, content);
         } catch (e) {
           alert(`Failed to upload ${file.name}: ${e.message}`);

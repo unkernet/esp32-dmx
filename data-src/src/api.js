@@ -81,8 +81,8 @@ export const API = {
     return fetch('/config', { method: 'PUT', body: new Uint8Array(0) });
   },
 
-  async status() {
-    const res = await fetch('/status');
+  async status(signal) {
+    const res = await fetch('/status', { signal });
     if (!res.ok) throw new Error('Failed to get device status');
     return await res.json();
   },

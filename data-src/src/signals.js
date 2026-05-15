@@ -6,6 +6,7 @@ export const isDirty = signal(false);
 
 export const wsStatus = signal("disconnected");
 export const monitorData = signal({}); // universe -> data
+export const monitorHistory = signal({}); // universe -> [data]
 
 export const scripts = signal([]);
 export const runningScript = signal(null);

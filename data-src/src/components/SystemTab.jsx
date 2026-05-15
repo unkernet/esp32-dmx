@@ -4,13 +4,7 @@ import { Clock, HardDrive, RefreshCcw } from "lucide-preact";
 import { useEffect, useState } from 'preact/hooks';
 import { config } from "../signals";
 
-let updateTmr;
-
 function MemUsage({ mem, label }) {
-  const memUsagePercent = mem.total > 0 
-    ? ((mem.total - mem.free) / mem.total) * 100
-    : 0;
-
   return <FormField label={label}>
     <p style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
       <HardDrive size={20} />
@@ -31,7 +25,6 @@ export function SystemTab() {
   const { value: configValue } = config;
   const dev_name = configValue?.meta?.dev_name;
 
-
   const handleReboot = async () => {
     try {
       await API.reboot();
@@ -41,17 +34,29 @@ export function SystemTab() {
     }
   };
 
-  const updateStatus = async () => {
-      const status = await API.status();
-      setSystemStatus(status);
-      updateTmr = setTimeout(updateStatus, 3000);
-  };
-
   useEffect(() => {
+    let timeoutId;
+    const controller = new AbortController();
+
+    const updateStatus = async () => {
+      try {
+        const status = await API.status(controller.signal);
+        setSystemStatus(status);
+        timeoutId = setTimeout(updateStatus, 3000);
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          console.error("Failed to update status:", e);
+          timeoutId = setTimeout(updateStatus, 5000);
+        }
+      }
+    };
+
     updateStatus();
+
     return () => {
-      clearTimeout(updateTmr);
-    }
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, []);
 
   const formatUptime = (seconds) => {
@@ -62,9 +67,9 @@ export function SystemTab() {
     return `${d}d ${h}h ${m}m ${s}s`;
   };
 
-  if (!systemStatus) {
-    return <Card title="System Information"/>;
-  }
+  // if (!systemStatus) {
+  //   return <Card title="System Information"/>;
+  // }
 
   return (
     <Card title="System Information" class="sysinfo">
@@ -78,14 +83,17 @@ export function SystemTab() {
         </FormField>
         : null }
 
-      <FormField label="Uptime">
-        <p style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Clock size={20} />
-          <span>{formatUptime(systemStatus.uptime)}</span>
-        </p>
-      </FormField>
+      { systemStatus ? <>
+        <FormField label="Uptime">
+          <p style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Clock size={20} />
+            <span>{formatUptime(systemStatus.uptime)}</span>
+          </p>
+        </FormField>
 
-      <MemUsage label="Memory usage" mem={systemStatus.heap} />
+        <MemUsage label="Memory usage" mem={systemStatus.heap} />
+      </> : <p aria-busy={true} /> }
+
 
       <button onClick={() => { setShowRebootConfirm(true) }} class="secondary">
         <RefreshCcw size={20} /> Reboot Device
