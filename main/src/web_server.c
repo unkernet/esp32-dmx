@@ -105,10 +105,10 @@ static esp_err_t http_get_status_handler(httpd_req_t *req) {
         "{"
             "\"uptime\":%lld,"
             "\"heap\":{"
-                "\"total\":%u,"
-                "\"free\":%u,"
-                "\"block\":%u,"
-                "\"min\":%u"
+                "\"total\":%lu,"
+                "\"free\":%lu,"
+                "\"block\":%lu,"
+                "\"min\":%lu"
             "}"
         "}",
         uptime_us / 1000000,
@@ -158,7 +158,7 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 
 static esp_err_t serve_static_file(httpd_req_t *req)
 {
-    char base_filepath[48]; // Path without /spiffs and without .gz
+    char base_filepath[32]; // Path without /spiffs and without .gz
     char full_filepath_gz[48]; // Full path including /spiffs and .gz
     const char *uri = req->uri;
 
@@ -284,7 +284,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     if (req->content_len == 0) {
         // Just reboot
         httpd_resp_send(req, NULL, 0);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(500));
         esp_restart();
         return ESP_OK;
     }
@@ -313,7 +313,7 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
     }
 
     httpd_resp_send(req, NULL, 0);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
     esp_restart();
 
     return ESP_OK;

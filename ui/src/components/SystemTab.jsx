@@ -22,14 +22,17 @@ function MemUsage({ mem, label }) {
 export function SystemTab() {
   const [systemStatus, setSystemStatus] = useState(null);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
+  const [waitReboot, setWaitReboot] = useState(false);
   const { value: configValue } = config;
   const dev_name = configValue?.meta?.dev_name;
 
   const handleReboot = async () => {
     try {
+      setWaitReboot(true);
       await API.reboot();
       setInterval(() => { location.reload(); }, 1000);
     } catch (e) {
+      setWaitReboot(false);
       alert("Reboot failed: " + e.message);
     }
   };
@@ -105,6 +108,7 @@ export function SystemTab() {
         onClose={() => setShowRebootConfirm(false)}
         onConfirm={handleReboot}
         confirmText="Reboot"
+        busy={waitReboot}
       >
         <p>Are you sure you want to reboot the device?</p>
       </Modal>

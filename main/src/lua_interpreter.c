@@ -416,7 +416,7 @@ esp_err_t lua_interpreter_list_scripts(httpd_req_t *req) {
     int status_len;
     
     // Escape last_error
-    if (S && S->last_error) {
+    if (S) {
         for (char *p = S->last_error; *p && (p < S->last_error + ERROR_LEN); p++) {
             if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t')
                 *p = ' ';

@@ -51,6 +51,7 @@ function isEqual(a, b) {
 export function App() {
   const [initialConfig, setInitialConfig] = useState(null);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
+  const [waitReboot, setWaitReboot] = useState(false);
 
   const { supported } = config.value?.meta || { supported: 0 };
   console.log(supported)
@@ -89,11 +90,13 @@ export function App() {
 
   const handleSaveAndRestart = async () => {
     try {
+      setWaitReboot(true);
       await API.saveConfig(config.value);
       setTimeout(() => {
         location.reload();
-      }, 2000);
+      }, 1000);
     } catch (e) {
+      setWaitReboot(false);
       alert("Failed to save config: " + e.message);
     }
   };
@@ -146,6 +149,7 @@ export function App() {
         onClose={() => setShowRebootConfirm(false)}
         onConfirm={handleSaveAndRestart}
         confirmText="Save"
+        busy={waitReboot}
       >
         <p>Save configuration and reboot device?</p>
       </Modal>

@@ -36,7 +36,7 @@ export function FormField({ label, description, children }) {
 /**
  * Basic Modal component
  */
-export function Modal({ isOpen, title, children, onClose, onConfirm, confirmText = "Confirm", footer, class: className }) {
+export function Modal({ isOpen, title, children, onClose, onConfirm, confirmText = "Confirm", footer, class: className, busy }) {
   useEffect(() => {
     if (!isOpen) return;
 
@@ -51,7 +51,7 @@ export function Modal({ isOpen, title, children, onClose, onConfirm, confirmText
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
+// // // // // // //123456712
   return (
     <dialog open class={className}>
       <article>
@@ -64,7 +64,7 @@ export function Modal({ isOpen, title, children, onClose, onConfirm, confirmText
           {footer ? footer : (
             <>
               <button class="secondary outline" onClick={onClose}>{ onConfirm ? 'Cancel' : 'Close' }</button>
-              {onConfirm && <button onClick={onConfirm}>{confirmText}</button>}
+              {onConfirm && <button onClick={onConfirm} aria-busy={busy}>{confirmText}</button>}
             </>
           )}
         </footer>

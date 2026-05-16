@@ -10,11 +10,11 @@ void app_config_get_default(app_config_t *config) {
         return;
     }
 
+    memset(config, 0, sizeof(*config));
+
     // Default STA settings
     strncpy(config->sta_ssid, "YOUR_STA_SSID", MAX_SSID_LEN);
-    config->sta_ssid[MAX_SSID_LEN] = '\0';
     strncpy(config->sta_password, "YOUR_STA_PASSWORD", MAX_PASSWORD_LEN);
-    config->sta_password[MAX_PASSWORD_LEN] = '\0';
     config->sta_dhcp_enabled = true;
     // Default static IP settings (if DHCP is disabled)
     // These values are examples and should be chosen carefully for your network
@@ -26,9 +26,7 @@ void app_config_get_default(app_config_t *config) {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     sprintf(config->ap_ssid, "ESP-DMX-%02X%02X", mac[4], mac[5]);
-    config->ap_ssid[MAX_SSID_LEN] = '\0';
-    strncpy(config->ap_password, "password", MAX_PASSWORD_LEN); // Default AP password
-    config->ap_password[MAX_PASSWORD_LEN] = '\0';
+    // Default AP password if empty
 
     config->enabled_modules = MOD_EN_DMX_IN | MOD_EN_DMX_OUT | MOD_EN_AMBITFUL | MOD_EN_WS2812;
 

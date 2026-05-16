@@ -62,35 +62,35 @@ static inline uint8_t clamp_100(uint8_t v) {
 // ////////
 // Modes
 
-static void power_mode(uint8_t mode) {
-    // ibeacon_data[4] = 0xAB;
-    ibeacon_data[5] = app_config->ambitful_channel * 10;
-    ibeacon_data[6] = mode;
-    ibeacon_data[7] = 0;
+// static void power_mode(uint8_t mode) {
+//     // ibeacon_data[4] = 0xAB;
+//     ibeacon_data[5] = app_config->ambitful_channel * 10;
+//     ibeacon_data[6] = mode;
+//     ibeacon_data[7] = 0;
 
-    ibeacon_data[8] = 0x64;
-    ibeacon_data[9] = 0xff;
+//     ibeacon_data[8] = 0x64;
+//     ibeacon_data[9] = 0xff;
 
-    ibeacon_data[10] = 0xff;
-    ibeacon_data[11] = 0xff;
+//     ibeacon_data[10] = 0xff;
+//     ibeacon_data[11] = 0xff;
 
-    ibeacon_data[12] = 0;
-    ibeacon_data[13] = 0;
+//     ibeacon_data[12] = 0;
+//     ibeacon_data[13] = 0;
 
-    ibeacon_data[14] = 0;
-    ibeacon_data[15] = 0x11;
-    ibeacon_data[16] = 0x22;
-    // ibeacon_data[17] = 0xBA;
-    // ibeacon_data[18] = counter;
-    ibeacon_data[19] = 0; // Power
-}
+//     ibeacon_data[14] = 0;
+//     ibeacon_data[15] = 0x11;
+//     ibeacon_data[16] = 0x22;
+//     // ibeacon_data[17] = 0xBA;
+//     // ibeacon_data[18] = counter;
+//     ibeacon_data[19] = 0; // Power
+// }
 
-static void mode_off() {
-  power_mode(3);
-}
-static void mode_on() {
-  power_mode(4);
-}
+// static void mode_off() {
+//   power_mode(3);
+// }
+// static void mode_on() {
+//   power_mode(4);
+// }
 
 static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { // mode 0
     power = clamp_100(power); // 0 - 100

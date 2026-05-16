@@ -1,0 +1,24 @@
+menu "ESP-DMX Hardware configuration"
+
+    choice ESP_DMX_HW_CONFIG
+        prompt "Hardware configuration"
+        default ESP_DMX_HW_DEFAULT
+        help
+          Choose hardware configuration
+
+        config ESP_DMX_HW_DEFAULT
+            bool "Default configuration, all features available, 2 DMX ports"
+
+        config ESP_DMX_HW_WIRELESS
+            bool "Wireless DMX"
+
+        config ESP_DMX_HW_MINI
+            bool "Mini, only 1 duplex DMX port"
+    endchoice
+
+    config ESP_DMX_HW_OVERRIDE_FILE
+        string
+        default "hardware_config.wireless.h" if ESP_DMX_HW_WIRELESS
+        default "hardware_config.mini.h"     if ESP_DMX_HW_MINI
+
+endmenu

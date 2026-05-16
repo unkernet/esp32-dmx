@@ -59,8 +59,6 @@ static void dmx_rx_task(void *arg)
         if (!xQueueReceive(cfg->uart_evt_queue, &evt, portMAX_DELAY))
             continue;
         
-        int64_t now = esp_timer_get_time();
-
         switch (evt.type) {
 
         case UART_DATA:
@@ -182,7 +180,7 @@ void send_dmx_data_common(dmx_config *cfg, const uint8_t * data, uint16_t length
     xTaskNotifyGive(cfg->tx_task);
 }
 
-esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
+esp_err_t dmx_init_common(dmx_config *cfg, int8_t tx_pin,  int8_t rx_pin)
 {
     uart_config_t uart_cfg = {
         .baud_rate  = 250000,
@@ -193,7 +191,6 @@ esp_err_t dmx_init_common(dmx_config *cfg, uint8_t tx_pin,  uint8_t rx_pin)
         .source_clk = UART_SCLK_DEFAULT,
     };
 
-    esp_err_t err;
     RETURN_ON_ERROR(uart_driver_install(cfg->uart_num, DMX_BUF_SIZE + 120, 0, 4, &cfg->uart_evt_queue, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3));
     RETURN_ON_ERROR(uart_param_config(cfg->uart_num, &uart_cfg));
     RETURN_ON_ERROR(uart_set_pin(cfg->uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));

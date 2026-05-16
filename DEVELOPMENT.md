@@ -4,14 +4,14 @@
 This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX512 (via UART), and custom logic via an embedded Lua interpreter.
 
 ## Project Structure
-- `src/main.c`: Application entry point and initialization.
-- `src/router.c`: Central DMX routing engine. Dispatches data between sources (WiFi, UART, Lua).
-- `src/lua_interpreter.c`: Manages the Lua VM (v5.4), script execution, and graceful task termination.
-- `src/wifi_manager.c`: Handles STA/AP modes, reconnections, and WiFi scanning.
-- `src/web_server.c`: REST API and static file server (serving gzipped files from SPIFFS).
-- `data-src/`: Frontend source code (Preact.js with Vite).
+- `main/src/main.c`: Application entry point and initialization.
+- `main/src/router.c`: Central DMX routing engine. Dispatches data between sources (WiFi, UART, Lua).
+- `main/src/lua_interpreter.c`: Manages the Lua VM (v5.4), script execution, and graceful task termination.
+- `main/src/wifi_manager.c`: Handles STA/AP modes, reconnections, and WiFi scanning.
+- `main/src/web_server.c`: REST API and static file server (serving gzipped files from SPIFFS).
+- `ui/`: Frontend source code (Preact.js with Vite).
 
-### Frontend Structure (`data-src/src/`)
+### Frontend Structure (`ui/src/`)
 -   `app.jsx`: The root Preact component, orchestrating the main layout and tabs.
 -   `main.jsx`: The entry point for the Preact application, mounting the `App` component.
 -   `api.js`: Centralized module for all API calls to the ESP32 backend (e.g., fetching/saving config, Lua commands, WiFi scan).
@@ -41,13 +41,18 @@ This project is an ESP32-based DMX-over-WiFi gateway. It supports Art-Net, DMX51
 ### System & WiFi
 | Endpoint | Method | Description | Payload/Response |
 | :--- | :--- | :--- | :--- |
-| `/wifi/scan` | `GET` | Scan for visible WiFi networks. | JSON: `[{"ssid":string, "rssi":int, "auth":int}]` |
+| `/wifi/scan` | `GET` | Scan for visible WiFi networks. | JSON: `[{"ssid":string, "rssi":int, "auth":int, "bssid":string}]` |
 | `/status` | `GET` | Get current system status and memory information. | JSON: `{"uptime": long long int, "heap": {"total": unsigned int, "free": unsigned int, "block": unsigned int, "min": unsigned int}}` |
 | `/ws` | `GET` | WebSocket for real-time DMX monitoring/control. | Binary: `[u16 universe][u8 data...]` |
 
 ## Lua Scripting API
 
-Lua scripts usually include an **endless loop** to process or generate DMX data in real-time. The environment is **sandboxed**: the `io` library and sensitive `os` functions (`execute`, `exit`, `getenv`, etc.) are removed for security.
+The system uses Lua version 5.5. The environment is **sandboxed**: the `io` library and sensitive `os` functions (e.g., `execute`, `exit`, `getenv`) are restricted for system stability and security.
+
+Lua scripts usually include an **endless loop** to process or generate DMX data in real-time.
+
+**Precompiled Scripts (.luac):**
+You may upload precompiled Lua bytecode. However, the ESP32 interpreter is built with the `LUA_32BITS` flag enabled. To create compatible bytecode, you MUST build your local Lua 5.5 compiler with the same flag: `make MYCFLAGS="-DLUA_32BITS"`.
 
 **Functions available in Lua scripts:**
 

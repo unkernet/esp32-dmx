@@ -1889,6 +1889,8 @@ esp_err_t uart_driver_install(uart_port_t uart_num, int rx_buffer_size, int tx_b
     ret = uart_intr_config(uart_num, &uart_intr);
     ESP_GOTO_ON_ERROR(ret, err, UART_TAG, "Could not configure the interrupt for UART");
 
+    ESP_LOGI(UART_TAG, "Patched UART driver installed");
+
     return ret;
 
 err:

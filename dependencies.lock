@@ -1,10 +1,32 @@
 dependencies:
+  espressif/lua:
+    component_hash: 1eab31ab7200f78a0cb6e1633532abd012a167d504e8d8fc993909c52ce4fb88
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 5.5.0
+  espressif/mdns:
+    component_hash: 8bcf12e37c58c1d584aef32a02b92548124c7a3a9fcf548d3235c844a035e0f0
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.11.1
   idf:
     source:
       type: idf
-    version: 5.5.1
+    version: 5.5.4
 direct_dependencies:
+- espressif/lua
+- espressif/mdns
 - idf
-manifest_hash: 29c29a25bcf8d45da69f2c8cd7939b846ec7a47d2f2eaaa979ef89911a61dcd8
+manifest_hash: 16f139ad4946671bb7a49598f1f6730c245eeca1e7a12fdf874de50be13653e4
 target: esp32c3
 version: 2.0.0

@@ -27,7 +27,6 @@ static const char *TAG = "wifi_mgr";
 /* ---------- state ---------- */
 
 wifi_state_t wifi_state;
-static bool ever_connected = false;
 uint32_t g_ip_addr = 0;
 uint32_t g_broadcast_addr = 0;
 uint8_t g_mac_addr[6];
@@ -286,7 +285,7 @@ static void wifi_start_ap(void)
 static void reconnect_task(void *arg)
 {
     while (1) {
-        EventBits_t bits = xEventGroupWaitBits(
+        xEventGroupWaitBits(
             wifi_event_group,
             EVT_RECONNECT_NOW,
             pdTRUE,        // clear on exit
@@ -303,7 +302,7 @@ static void reconnect_task(void *arg)
 /* ---------- init ---------- */
 
 esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
-    uint16_t number = 32;
+    uint16_t number = 20;
     wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * number);
     if (ap_info == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
@@ -335,8 +334,10 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     httpd_resp_send_chunk(req, "[", 1);
     for (int i = 0; i < ap_count; i++) {
         char buf[128];
-        int len = snprintf(buf, sizeof(buf), "%s{\"ssid\":\"%s\",\"rssi\":%d,\"auth\":%d}",
-                           i == 0 ? "" : ",", (char *)ap_info[i].ssid, ap_info[i].rssi, ap_info[i].authmode);
+        uint8_t *bssid = ap_info[i].bssid;
+        int len = snprintf(buf, sizeof(buf), "%s{\"ssid\":\"%s\",\"rssi\":%d,\"auth\":%d,\"bssid\":\"%02x:%02x:%02x:%02x:%02x:%02x\"}",
+                           i == 0 ? "" : ",", (char *)ap_info[i].ssid, ap_info[i].rssi, ap_info[i].authmode,
+                           bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
         httpd_resp_send_chunk(req, buf, len);
     }
     httpd_resp_send_chunk(req, "]", 1);

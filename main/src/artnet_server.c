@@ -92,17 +92,6 @@ typedef struct {
     struct sockaddr_in addr;
 } udp_packet_t;
 
-
-// Global variables for DMX output
-static artdmx_packet_t s_artnet_packet_out = {
-    .header = {
-        .id = ARTNET_ID,
-        .opcode = ARTNET_OP_DMX,
-        .prot_ver = htons(14), // Art-Net Protocol Version 14
-    },
-    .physical = 0,
-};
-
 static SemaphoreHandle_t tx_sem;
 static udp_packet_t rx_packet;
 static udp_packet_t tx_packet;
@@ -210,7 +199,7 @@ static void artnet_sender_task(void *pvParameters)
 {
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        int tx_err = sendto(sock, tx_packet.buffer, tx_packet.len, 0, (struct sockaddr *)&tx_packet.addr, sizeof(struct sockaddr_in));
+        sendto(sock, tx_packet.buffer, tx_packet.len, 0, (struct sockaddr *)&tx_packet.addr, sizeof(struct sockaddr_in));
         xSemaphoreGive(tx_sem);
     }
     vTaskDelete(NULL);
@@ -223,7 +212,7 @@ static void artnet_server_task(void *pvParameters)
         rx_packet.len = recvfrom(sock, rx_packet.buffer, UDP_BUFFER_SIZE, 0, (struct sockaddr *)&rx_packet.addr, &socklen);
 
         if (rx_packet.len > 0) {
-            handle_artnet_packet(rx_packet.buffer, rx_packet.len, &rx_packet.addr);
+            handle_artnet_packet((const char*)rx_packet.buffer, rx_packet.len, &rx_packet.addr);
         }
     }
     vTaskDelete(NULL);

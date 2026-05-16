@@ -1,6 +1,10 @@
 #ifndef ENABLED_MODULES_H
 #define ENABLED_MODULES_H
+
 #include "hardware_config.h"
+#ifdef CONFIG_ESP_DMX_HW_OVERRIDE_FILE
+#include CONFIG_ESP_DMX_HW_OVERRIDE_FILE
+#endif
 
 #if (defined(DMX_RX_PIN) && (DMX_RX_PIN) >= 0)
     #define _DMX_RX_EN
