@@ -28,7 +28,7 @@ export function ControlTab() {
     setData(newData)
     controlData = newData;
     
-    WS.sendDMX(universe, newData);
+    WS.sendDMX(universe, newData, channelIndex);
   };
 
   return (

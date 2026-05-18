@@ -153,7 +153,7 @@
 
 #ifdef ARTNET
     #define _BIT_ARTNET_SUPP    (MOD_EN_ARTNET_OUT | MOD_EN_ARTNET_IN | MOD_EN_ARTNET_WS)
-    #define _BIT_ARTNET_EN      (MOD_EN_ARTNET_OUT | MOD_EN_ARTNET_IN )
+    #define _BIT_ARTNET_EN      (MOD_EN_ARTNET_IN)
 #else
     #define _BIT_ARTNET_EN    0
 #endif

@@ -75,7 +75,7 @@ typedef struct __attribute__((packed)) {
 } app_config_t;
 
 #define APP_CONFIG_MAGIC   0x5844
-#define APP_CONFIG_VERSION 1 + sizeof(app_config_t)
+#define APP_CONFIG_VERSION 1
 
 /**
  * @brief Initialize configuration with default values.

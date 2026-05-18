@@ -23,6 +23,7 @@ static const char *TAG = "LUA";
 
 typedef struct {
     TaskHandle_t task_handle;
+    lua_State *L;
     volatile bool should_stop;
     char current_script[C_SCRIPT_LEN];
     char last_error[ERROR_LEN];
@@ -70,7 +71,7 @@ static int l_dmx_send(lua_State *L) {
     }
 
     // Script will run much more stable with regular garbage collection
-    lua_gc(L, LUA_GCCOLLECT, 0);
+    lua_gc(L, LUA_GCSTEP, 0);
 
     return 0;
 }
@@ -111,6 +112,8 @@ void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
 }
 
 static int l_dmx_read(lua_State *L) {
+    lua_kill_hook(L, NULL);
+
     int universe = luaL_checkinteger(L, 1);
     int timeout = luaL_checkinteger(L, 2);
 
@@ -137,6 +140,8 @@ static int l_dmx_read(lua_State *L) {
 }
 
 static int l_sleep(lua_State *L) {
+    lua_kill_hook(L, NULL);
+
     int ms = luaL_checkinteger(L, 1);
     vTaskDelay(pdMS_TO_TICKS(ms));
     lua_kill_hook(L, NULL);
@@ -162,9 +167,8 @@ static int l_random(lua_State *L) {
 
 static esp_err_t ensure_lua_state() {
     if (S == NULL) {
-        S = malloc(sizeof(lua_interpreter_state_t));
+        S = calloc(1, sizeof(lua_interpreter_state_t));
         RETURN_ON_NULL(S, ESP_ERR_NO_MEM);
-        memset(S, 0, sizeof(lua_interpreter_state_t));
         
         if(unlikely(!(S->dmx_data_sem = xSemaphoreCreateBinary()))) {
             free(S);
@@ -194,6 +198,7 @@ static void lua_task(void *pvParameters) {
     lua_load_ctx_t *ctx = (lua_load_ctx_t *)pvParameters;
 
     lua_State *L = luaL_newstate();
+    S->L = L;
     if (L == NULL) {
         ESP_LOGE(TAG, "Failed to create Lua state");
         strncpy(S->last_error, "Failed to create Lua state", ERROR_LEN - 1);
@@ -244,9 +249,6 @@ static void lua_task(void *pvParameters) {
     lua_register(L, "sleep", l_sleep);
     lua_register(L, "print", l_print);
 
-    // Set hook to allow killing the script
-    lua_sethook(L, lua_kill_hook, LUA_MASKCOUNT, 100);
-
     int status;
     if (ctx->req) {
         ESP_LOGI(TAG, "Loading script from stream");
@@ -293,6 +295,7 @@ static void lua_task(void *pvParameters) {
     }
 
     lua_close(L);
+    S->L = NULL;
     S->task_handle = NULL;
     S->current_script[0] = '\0';
     S->listen_universe = EMPTY;
@@ -356,13 +359,23 @@ esp_err_t lua_interpreter_run_stream(httpd_req_t *req) {
 }
 
 esp_err_t lua_interpreter_kill(void) {
-    if (!S || S->task_handle == NULL) {
+    if (!S) {
         return ESP_OK;
     }
 
     TaskHandle_t task_handle = S->task_handle;
+    if (task_handle == NULL) {
+        return ESP_OK;
+    }
+
     S->should_stop = true;
     
+    lua_State *L = S->L;
+    if (L) {
+        // Set hook to allow killing the script
+        lua_sethook(L, lua_kill_hook, LUA_MASKCOUNT, 1);
+    }
+
     // Abort any pending delay (sleep) immediately
     xTaskNotifyGiveIndexed(task_handle, DATA_NOTIFY);
     xTaskAbortDelay(task_handle);
@@ -378,6 +391,7 @@ esp_err_t lua_interpreter_kill(void) {
         ESP_LOGW(TAG, "Script was forcibly killed");
         strncpy(S->last_error, "Script was forcibly killed", ERROR_LEN - 1);
         vTaskDelete(task_handle);
+        S->L = NULL;
         S->task_handle = NULL;
         S->current_script[0] = '\0';
         S->listen_universe = EMPTY;

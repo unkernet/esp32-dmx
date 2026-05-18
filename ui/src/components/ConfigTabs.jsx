@@ -91,20 +91,20 @@ export function ConfigTabs({ moduleName }) {
 
   const renderArtnetConfig = () => (
     <Card title="Art-Net Configuration">
-      <FormField label="Enable Art-Net Output" description="If enabled, data from DMX inputs will be broadcasted to Art-Net.">
-        <input 
-          type="checkbox" 
-          role="switch" 
-          checked={configValue.enabled_modules.artnet_out}
-          onInput={(e) => updateConfig('enabled_modules.artnet_out', e.target.checked)} 
-        />
-      </FormField>
       <FormField label="Enable Art-Net Input" description="If enabled, data from Art-Net will be send to the corresponding to DMX output.">
         <input 
           type="checkbox" 
           role="switch" 
           checked={configValue.enabled_modules.artnet_in}
           onInput={(e) => updateConfig('enabled_modules.artnet_in', e.target.checked)} 
+        />
+      </FormField>
+      <FormField label="Enable Art-Net Output" description="If enabled, data from DMX inputs will be broadcasted to Art-Net.">
+        <input 
+          type="checkbox" 
+          role="switch" 
+          checked={configValue.enabled_modules.artnet_out}
+          onInput={(e) => updateConfig('enabled_modules.artnet_out', e.target.checked)} 
         />
       </FormField>
       <FormField label="Art-Net ⇄ Websocket Forwarding" description={"Enables data forwarding between Art-Net and Websocket.\nThis allows you to monitor Art-Net traffic in the Monitor tab and control Art-Net devices from the Control tab, but may impact device performance."}>
@@ -175,7 +175,7 @@ export function ConfigTabs({ moduleName }) {
         const port = configValue.ws2812_ports[i];
         return (
           <div key={mod}>
-            {ws2812Supported.length > 1 && <h6>WS2812 Channel {i}</h6>}
+            {ws2812Supported.length > 1 && <h6>WS2812 Channel {i + 1}</h6>}
             <FormField label="Enable Output">
               <input
                 type="checkbox" 

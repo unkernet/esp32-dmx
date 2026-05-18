@@ -127,10 +127,8 @@ export function App() {
       </nav>
 
       <main class={"container" + (isDirty.value ? " dirty" : "")}>
-        <section id="content">
-          <h1>{filteredTabs.find(t => t.id === activeTab.value)?.label}</h1>
-          <CurrentTabComponent />
-        </section>
+        <h1>{filteredTabs.find(t => t.id === activeTab.value)?.label}</h1>
+        <CurrentTabComponent />
       </main>
 
       {isDirty.value && (

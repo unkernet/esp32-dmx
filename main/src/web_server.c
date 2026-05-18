@@ -374,7 +374,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     }
 
     if (ws_pkt.len) {
-        buf = calloc(1, ws_pkt.len + 1);
+        buf = malloc(ws_pkt.len + 1);
         ws_pkt.payload = buf;
         ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
         if (ret != ESP_OK) {

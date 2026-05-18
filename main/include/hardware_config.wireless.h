@@ -7,4 +7,6 @@
 #define DMX_1_TX_PIN    4
 #define DMX_1_EN_PIN    1
 
+// #define WS2812_1_PIN    9
+
 #endif // HARDWARE_CONFIG_WIRELESS_H

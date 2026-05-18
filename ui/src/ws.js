@@ -72,13 +72,13 @@ export const WS = {
     }
   },
 
-  sendDMX(universe, data) {
+  sendDMX(universe, data, index) {
     if (this.readyState() !== WebSocket.OPEN) {
       return;
     }
 
     if (lastSendTmr) {
-      delayedData = {universe, data};
+      delayedData = {universe, data, index};
       return;
     }
 
@@ -87,13 +87,13 @@ export const WS = {
     lastSendTmr = setTimeout(() => {
       lastSendTmr = null;
       if (delayedData) {
-        WS.sendDMX(delayedData.universe, delayedData.data);
+        WS.sendDMX(delayedData.universe, delayedData.data, delayedData.index);
       }
     }, SEND_INTERVAL);
 
     // Find the last non-zero index, but at least 16
-    let lastNonZero = 15;
-    for (let i = 511; i >= 16; i--) {
+    let lastNonZero = Math.max(15, index);
+    for (let i = 511; i > lastNonZero; i--) {
       if (data[i] > 0) {
         lastNonZero = i;
         break;

@@ -4,6 +4,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "driver/uart.h"
+#include "soc/soc_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_rom_sys.h"
@@ -91,7 +92,7 @@ static void dmx_rx_task(void *arg)
         case UART_DATA_BREAK: {
             to_read += evt.size;
             if (to_read > DMX_BUF_SIZE) {
-                ESP_LOGE(port->instance_name, "Too long packet: %d", to_read);
+                ESP_LOGD(port->instance_name, "Too long packet: %d", to_read);
                 is_sync = false;
                 to_read = 0;
                 uart_flush_input(port->uart_num);
@@ -129,7 +130,7 @@ static void dmx_rx_task(void *arg)
             is_sync = false;
             to_read = 0;
             uart_flush_input(port->uart_num);
-            ESP_LOGE(port->instance_name, "UART buffer overflow");
+            ESP_LOGD(port->instance_name, "UART buffer overflow");
             break;
         default:
             break;
@@ -200,9 +201,8 @@ static esp_err_t dmx_init_port(const dmx_port_settings_t *settings, int8_t uart_
         return ESP_ERR_INVALID_ARG;
     }
 
-    dmx_port_t *port = malloc(sizeof(dmx_port_t));
+    dmx_port_t *port = calloc(1, sizeof(dmx_port_t));
     RETURN_ON_NULL(port, ESP_ERR_NO_MEM);
-    memset(port, 0, sizeof(dmx_port_t));
 
     port->uart_num = uart_num;
     port->in_universe = settings->in_universe;
@@ -276,21 +276,33 @@ esp_err_t dmx_init(app_config_t *config)
 {
 
     #ifdef _DMX_0_EN
+    #if DMX_0_UART < 0 || DMX_0_UART >= SOC_UART_NUM
+    #error "Invalid UART port number"
+    #endif
     RETURN_ON_ERROR(dmx_init_port(&config->dmx_ports[0], DMX_0_UART, DMX_0_TX_PIN, DMX_0_RX_PIN, DMX_0_EN_PIN, DATA_SOURCE_DMX_0_IN, 
         config->enabled_modules & (MOD_EN_DMX_0_IN | MOD_EN_DMX_0_OUT), DMX_0_NAME));
     #endif
 
     #ifdef _DMX_1_EN
+    #if DMX_1_UART < 0 || DMX_1_UART >= SOC_UART_NUM
+    #error "Invalid UART port number"
+    #endif
     RETURN_ON_ERROR(dmx_init_port(&config->dmx_ports[1], DMX_1_UART, DMX_1_TX_PIN, DMX_1_RX_PIN, DMX_1_EN_PIN, DATA_SOURCE_DMX_1_IN, 
         config->enabled_modules & (MOD_EN_DMX_1_IN | MOD_EN_DMX_1_OUT), DMX_1_NAME));
     #endif
 
     #ifdef _DMX_2_EN
+    #if DMX_2_UART < 0 || DMX_2_UART >= SOC_UART_NUM
+    #error "Invalid UART port number"
+    #endif
     RETURN_ON_ERROR(dmx_init_port(&config->dmx_ports[2], DMX_2_UART, DMX_2_TX_PIN, DMX_2_RX_PIN, DMX_2_EN_PIN, DATA_SOURCE_DMX_2_IN, 
         config->enabled_modules & (MOD_EN_DMX_2_IN | MOD_EN_DMX_2_OUT), DMX_2_NAME));
     #endif
 
     #ifdef _DMX_3_EN
+    #if DMX_3_UART < 0 || DMX_3_UART >= SOC_UART_NUM
+    #error "Invalid UART port number"
+    #endif
     RETURN_ON_ERROR(dmx_init_port(&config->dmx_ports[3], DMX_3_UART, DMX_3_TX_PIN, DMX_3_RX_PIN, DMX_3_EN_PIN, DATA_SOURCE_DMX_3_IN, 
         config->enabled_modules & (MOD_EN_DMX_3_IN | MOD_EN_DMX_3_OUT), DMX_3_NAME));
     #endif

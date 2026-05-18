@@ -10,8 +10,8 @@
 #define WS2812_RESET_US 75
 static const char *TAG = "WS_2812";
 
-#define RMT_TX_NUM_MAX (SOC_RMT_TX_CANDIDATES_PER_GROUP * SOC_RMT_GROUPS)
-#define WS2812_PORT_COUNT_MAX (RMT_TX_NUM_MAX < 4 ? RMT_TX_NUM_MAX : 4)
+#define RMT_TX_NUM_MAX    (SOC_RMT_TX_CANDIDATES_PER_GROUP * SOC_RMT_GROUPS)
+#define WS2812_PORT_COUNT_MAX    MIN(4, RMT_TX_NUM_MAX)
 
 typedef struct {
     rmt_channel_handle_t rmt_chan;
@@ -83,7 +83,7 @@ static esp_err_t ws2812_init_port(ws2812_settings_t *settings, int gpio_num) {
     rmt_tx_channel_config_t tx_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = gpio_num,
-        .mem_block_symbols = 64,
+        .mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
         .resolution_hz = 3200000, // 3.2 Mhz
         .trans_queue_depth = 4,
     };
@@ -132,18 +132,27 @@ esp_err_t ws2812_init(app_config_t *config) {
     #endif
 
     #ifdef WS2812_1_PIN
+    #if RMT_TX_NUM_MAX < 2
+    #error "Hardware RMT channel limit reached"
+    #endif
     if (config->enabled_modules & MOD_EN_WS2812_1) {
         ws2812_init_port(&config->ws2812_ports[1], WS2812_1_PIN);
     }
     #endif
 
     #ifdef WS2812_2_PIN
+    #if RMT_TX_NUM_MAX < 3
+    #error "Hardware RMT channel limit reached"
+    #endif
     if (config->enabled_modules & MOD_EN_WS2812_2) {
         ws2812_init_port(&config->ws2812_ports[2], WS2812_2_PIN);
     }
     #endif
 
     #ifdef WS2812_3_PIN
+    #if RMT_TX_NUM_MAX < 4
+    #error "Hardware RMT channel limit reached"
+    #endif
     if (config->enabled_modules & MOD_EN_WS2812_3) {
         ws2812_init_port(&config->ws2812_ports[3], WS2812_3_PIN);
     }

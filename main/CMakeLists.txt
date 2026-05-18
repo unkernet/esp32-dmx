@@ -6,6 +6,7 @@ idf_component_register(SRCS ${SRCS}
 )
 
 # Build UI
+# Use `idf.py storage-flash` to upload UI manually
 file(GLOB_RECURSE UI_SRCS
     "${CMAKE_SOURCE_DIR}/ui/src/*"
 )

@@ -4,6 +4,8 @@ import { Card, Modal } from "./Common";
 import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle, Plus, Save } from "lucide-preact";
 // import { ccs } from '../util';
 
+let unsavedScript = "";
+
 export function ScriptingTab() {
   const [scripts, setScripts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -110,7 +112,7 @@ export function ScriptingTab() {
   };
 
   const handleNewScript = () => {
-    setCurrentScriptContent("");
+    setCurrentScriptContent(unsavedScript);
     setCurrentScriptFileName("");
     setShowContentModal(true);
   };
@@ -137,6 +139,9 @@ export function ScriptingTab() {
       setLoading(true);
       setScriptError(null);
       setHideError(false);
+      if (!currentScriptFileName) {
+        unsavedScript = currentScriptContent;
+      }
       await API.runStream(currentScriptContent);
       setTimeout(fetchScripts, 500);
     } catch (e) {
@@ -309,6 +314,7 @@ export function ScriptingTab() {
         onClose={() => setShowGuideModal(false)}
       >
         <div class="s-guide">
+          <p>The system uses Lua version 5.5.</p>
           <p>Scripts usually include an <strong>endless loop</strong> to process or generate DMX data in real-time.</p>
           <p>Script file named <code>init.lua</code> will be run on startup.</p>
 

@@ -133,17 +133,24 @@ div .scan-btn {
   appearance: auto;
 }
 
-.monitor {
-  max-height: calc(100vh - 4rem);
+.container:has(>.monitor) {
   display: flex;
   flex-flow: column;
   overflow: hidden;
+  max-height: 100vh;
+}
+.monitor {
+  display: flex;
+  flex-flow: column;
+  overflow: hidden;
+  margin-bottom: 0;
 }
 .monitor > * {
   flex: none;
 }
 .dmx-mon {
   display: flex;
+  flex-grow: 1;
   flex-wrap: wrap;
   gap: 2px;
   border: 1px solid var(--pico-form-element-border-color);
@@ -392,6 +399,12 @@ label.field > .description {
   overflow-y: auto;
   user-select: text;
 }
+.s-guide h4 {
+  margin-top: 1rem;
+}
+.s-guide h4, .s-guide p {
+  margin-bottom: .5rem;
+}
 .s-guide code, .s-guide pre, .script-src {
   color: color-mix(in srgb, var(--pico-code-color) 30%, var(--pico-primary));
 }
@@ -504,12 +517,12 @@ label.field > .description {
   
   main.container {
     margin-left: 0;
-    padding-bottom: 60px; /* Space for mobile nav */
+    padding-bottom: 65px; /* Space for mobile nav */
     max-width: 100%;
   }
 
   main.container.dirty {
-    padding-bottom: 120px;
+    padding-bottom: 120px; /* Space for mobile nav and save-bar */
   }
 
   .mobile-nav {
