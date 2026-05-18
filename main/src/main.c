@@ -9,18 +9,17 @@
 #include "modules.h"
 #include "wifi_manager.h"
 #include "web_server.h"
+#ifdef ARTNET
 #include "artnet_server.h"
+#endif
 #ifdef AMBITFUL_BLE
 #include "ambitful_ble.h"
 #endif
-#ifdef WS2812_PIN
+#ifdef _WS2812_EN
 #include "ws2812.h"
 #endif
 #ifdef _DMX_EN
 #include "dmx.h"
-#endif
-#ifdef _DMX_2_EN
-#include "dmx_2.h"
 #endif
 #include "app_config.h"
 #include "app_config_nvs.h"
@@ -81,14 +80,13 @@ void app_main() {
     #ifdef _DMX_EN
     LOG_ON_ERROR(dmx_init(&app_config), TAG, "dmx_init failed");
     #endif
-    #ifdef _DMX_2_EN
-    LOG_ON_ERROR(dmx_2_init(&app_config), TAG, "dmx_2_init failed");
-    #endif
-    #ifdef WS2812_PIN
+    #ifdef _WS2812_EN
     LOG_ON_ERROR(ws2812_init(&app_config), TAG, "ws2812_init failed");
     #endif
     LOG_ON_ERROR(start_webserver(&app_config), TAG, "start_webserver failed");
+    #ifdef ARTNET
     LOG_ON_ERROR(start_artnet_server(&app_config), TAG, "start_artnet_server failed");
+    #endif
     LOG_ON_ERROR(start_mdns(), TAG, "start_mdns failed");
     #ifdef LUA_INTERPRETER
     LOG_ON_ERROR(lua_interpreter_init(), TAG, "lua_interpreter_init failed");

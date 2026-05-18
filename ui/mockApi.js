@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { WebSocketServer } from 'ws';
-import { serializeConfig, serializeMeta } from './src/config';
+import { serializeConfig, serializeMeta } from './src/config.js';
 
 const wss = new WebSocketServer({ noServer: true });
 const luaScripts = new Map();
@@ -17,55 +17,72 @@ let lastError = null;
 const start = Date.now();
 
 let cfg = new Uint8Array(serializeConfig({
-  sta_ssid: "ESP-DMX-STA",
-  sta_password: "12345678",
-  sta_dhcp_enabled: 1,
-  sta_ip_cidr: '192.168.1.2/24',
-  ap_ssid: "ESP-DMX-AP",
-  ap_password: "87654321",
-
-  enabled_modules: {
-    dmx_in: true,
-    dmx_out: true,
-    dmx_2_in: true,
-    dmx_2_out: true,
-    artnet_out: true,
-    ambitful: false,
-    ws2812: true,
+  magic: 0x5844,
+  version: 1,
+  wifi: {
+    sta: {
+        ssid: "ESP-DMX-STA",
+        password: "12345678",
+        dhcp_enabled: 1,
+        ip_cidr: '192.168.1.2/24',
+    },
+    ap: {
+        ssid: "ESP-DMX-AP",
+        password: "87654321",
+    }
   },
 
-  dmx_in_universe: 0,
-  dmx_out_universe: 1,
-  dmx_repeat_interval: 10,
-  dmx_repeat_time_endless: true,
+  enabled_modules: {
+    dmx_0_in: true,
+    dmx_0_out: true,
+    dmx_1_in: true,
+    dmx_1_out: true,
+    artnet_out: true,
+    artnet_in: true,
+    artnet_ws: false,
+    ambitful: false,
+    ws2812_0: true,
+    lua: true,
+  },
 
-  dmx_2_in_universe: 2,
-  dmx_2_out_universe: 3,
-  dmx_2_repeat_interval: 10,
-  dmx_2_repeat_time: 60,
+  dmx_ports: [
+    { in_universe: 0, out_universe: 1, repeat_interval: 10, repeat_time: 255 },
+    { in_universe: 2, out_universe: 3, repeat_interval: 10, repeat_time: 254 },
+    { in_universe: 0, out_universe: 0, repeat_interval: 0, repeat_time: 0 },
+    { in_universe: 0, out_universe: 0, repeat_interval: 0, repeat_time: 0 },
+  ],
 
-  ambitful_universe: 10,
-  ambitful_addr: 1,
-  ambitful_channel: 2,
-  ambitful_groups: 4,
+  ws2812_ports: [
+    { universe: 20 },
+    { universe: 0 },
+    { universe: 0 },
+    { universe: 0 },
+  ],
 
-  ws2812_universe: 20,
+  ambitful: {
+    universe: 10,
+    addr: 1,
+    channel: 2,
+    groups: 4,
+  },
+
+  reserved: "",
 }));
 
 const metaCfg = new Uint8Array(serializeMeta({
   supported: {
-    dmx_in: true,
-    dmx_out: true,
-    dmx_2_in: true,
-    dmx_2_out: true,
+    dmx_0_in: true,
+    dmx_0_out: true,
+    dmx_1_in: true,
+    dmx_1_out: true,
     artnet_out: true,
+    artnet_ws: true,
     ambitful: true,
-    ws2812: true,
+    ws2812_0: true,
     lua: true,
   },
   dev_name: 'TEST',
-  dmx_name: 'DMX',
-  dmx_2_name: 'Wireless DMX',
+  dmx_name: ['DMX', 'Wirecless DMX', '', ''],
 }));
 
 export const mockApi = {
@@ -83,9 +100,24 @@ export const mockApi = {
           res.end(data);
           return;
         } else if (req.method === 'PUT') {
-          req.on('data', data => { cfg = data });
+          res.statusCode = 200;
+          req.on('data', data => {
+            data = new Uint8Array(data);
+            let match = true;
+            // Compare header
+            for (let i = 0; i < 4; i++) {
+              if (data[i] !== cfg[i]) {
+                match = false;
+                break;
+              }
+            }
+            if (match) {
+              cfg = data;
+            } else {
+              res.statusCode = 500;
+            }
+          });
           req.on('end', () => {
-            res.statusCode = 200;
             res.end('OK');
           });
           return;

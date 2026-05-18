@@ -3,6 +3,7 @@
 
 #include "app_config.h"
 #include "esp_err.h"
+#include "router.h"
 
 /**
  * @brief Start the Art-Net server task.
@@ -17,6 +18,6 @@ esp_err_t start_artnet_server(app_config_t *config);
  * @param data Pointer to the DMX payload.
  * @param length Length of the payload.
  */
-void send_artnet_dmx_data(uint16_t universe, const uint8_t *data, uint16_t length);
+void send_artnet_dmx_data(uint16_t universe, const uint8_t *data, uint16_t length, dmx_data_source_t source);
 
 #endif // ARTNET_SERVER_H

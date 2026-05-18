@@ -1,17 +1,16 @@
 #include "modules.h"
 #include "router.h"
 #include "web_server.h"
+#ifdef ARTNET
 #include "artnet_server.h"
+#endif
 #ifdef AMBITFUL_BLE
 #include "ambitful_ble.h"
 #endif
 #ifdef _DMX_EN
 #include "dmx.h"
 #endif
-#ifdef _DMX_2_EN
-#include "dmx_2.h"
-#endif
-#ifdef WS2812_PIN
+#ifdef _WS2812_EN
 #include "ws2812.h"
 #endif
 #ifdef LUA_INTERPRETER
@@ -22,20 +21,16 @@ void route_dmx_data(dmx_data_source_t source, uint16_t universe, const uint8_t *
     #ifdef AMBITFUL_BLE
     send_ambitful_dmx_data(universe, data, length);
     #endif
-    #ifdef WS2812_PIN
+    #ifdef _WS2812_EN
     send_ws2812_data(universe, data, length);
     #endif
     #ifdef _DMX_EN
-    send_dmx_data(universe, data, length);
+    dmx_send(universe, data, length);
     #endif
-    #ifdef _DMX_2_EN
-    send_dmx_2_data(universe, data, length);
+    #ifdef ARTNET
+    send_artnet_dmx_data(universe, data, length, source);
     #endif
-
-    if (source != DATA_SOURCE_ARTNET && source != DATA_SOURCE_WS && source != DATA_SOURCE_LUA) {
-        send_ws_dmx_data(universe, data, length);
-        send_artnet_dmx_data(universe, data, length);
-    }
+    send_ws_dmx_data(universe, data, length, source);
 
     #ifdef LUA_INTERPRETER
     if (source != DATA_SOURCE_LUA && source != DATA_SOURCE_LUA_DEBUG) {

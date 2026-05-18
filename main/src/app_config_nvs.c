@@ -27,7 +27,7 @@ esp_err_t app_config_load(app_config_t *config) {
         return err;
     }
 
-    size_t required_size = sizeof(app_config_t);
+    size_t required_size = sizeof(*config);
     err = nvs_get_blob(nvs_handle, NVS_KEY_APP_CONFIG, config, &required_size);
 
     if (err == ESP_ERR_NVS_NOT_FOUND) {
@@ -37,11 +37,15 @@ esp_err_t app_config_load(app_config_t *config) {
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) reading config from NVS!", esp_err_to_name(err));
         app_config_get_default(config); // Load defaults on read error
-    } else if (required_size != sizeof(app_config_t)) {
+    } else if (required_size != sizeof(*config)) {
         ESP_LOGW(TAG, "Config size mismatch! Expected %d, got %d. Loading defaults.",
-                 sizeof(app_config_t), required_size);
+                 sizeof(*config), required_size);
         app_config_get_default(config); // Load defaults on size mismatch
         err = ESP_ERR_NVS_INVALID_LENGTH; // Indicate size mismatch
+    } else if (config->magic != APP_CONFIG_MAGIC || config->version != APP_CONFIG_VERSION) {
+        ESP_LOGW(TAG, "Config magic or version mismatch! Magic: 0x%04X, Version: %d. Loading defaults.",
+                 config->magic, config->version);
+        app_config_get_default(config);
     } else {
         ESP_LOGI(TAG, "Config loaded successfully from NVS.");
     }
@@ -62,7 +66,7 @@ esp_err_t app_config_save(const app_config_t *config) {
         return err;
     }
 
-    err = nvs_set_blob(nvs_handle, NVS_KEY_APP_CONFIG, config, sizeof(app_config_t));
+    err = nvs_set_blob(nvs_handle, NVS_KEY_APP_CONFIG, config, sizeof(*config));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) writing config to NVS!", esp_err_to_name(err));
         nvs_close(nvs_handle);

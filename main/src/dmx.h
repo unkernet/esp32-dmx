@@ -3,19 +3,20 @@
 
 #include "esp_err.h"
 #include "app_config.h"
+#include "router.h"
 
 /**
- * @brief Send DMX data on Port 1.
+ * @brief Send DMX data to any port registered with the matching universe.
  * @param universe The target DMX universe.
  * @param data Pointer to the DMX payload.
  * @param length Length of the payload.
  */
-void send_dmx_data(uint16_t universe, const uint8_t *data, uint16_t length);
+void dmx_send(uint16_t universe, const uint8_t *data, uint16_t length);
 
 /**
- * @brief Initialize DMX Port 1.
+ * @brief Initialize DMX ports based on configuration.
  * @param config Pointer to the application configuration.
- * @return esp_err_t ESP_OK on success, or an error code.
+ * @return esp_err_t ESP_OK on success.
  */
 esp_err_t dmx_init(app_config_t *config);
 

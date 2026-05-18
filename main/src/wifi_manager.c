@@ -47,7 +47,7 @@ static bool led_level = false;
 static void led_hw_set(bool on)
 {
     /* active low */
-    #ifdef LED_GPIO
+    #if (LED_GPIO) >= 0
     gpio_set_level(LED_GPIO, on ? 0 : 1);
     #endif
 }
@@ -94,7 +94,7 @@ static void led_off(void)
 
 static void led_init(void)
 {
-    #ifdef LED_GPIO
+    #if (LED_GPIO) >= 0
     gpio_reset_pin(LED_GPIO);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
     led_off();
@@ -168,7 +168,7 @@ static void wifi_event_handler(void *arg,
         calc_ip_and_broadcast(&event->ip_info);
 
         s_retry_num = -1;
-        wifi_state = cfg->sta_dhcp_enabled ? WIFI_STATE_STA_CONNECTED : WIFI_STATE_STA_CONNECTED_MANUAL;
+        wifi_state = cfg->wifi.sta.dhcp_enabled ? WIFI_STATE_STA_CONNECTED : WIFI_STATE_STA_CONNECTED_MANUAL;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 
@@ -186,14 +186,14 @@ static bool wifi_start_sta(void)
     ESP_LOGI(TAG, "STA start");
     led_off();
 
-    if (!cfg->sta_dhcp_enabled) {
+    if (!cfg->wifi.sta.dhcp_enabled) {
         esp_netif_dhcpc_stop(sta_netif);
 
         esp_netif_ip_info_t ip_info;
-        ip_info.ip.addr = cfg->sta_ip;
+        ip_info.ip.addr = cfg->wifi.sta.ip;
         ip_info.gw.addr = 0;
-        if (cfg->sta_netmask_len <= 32) {
-            ip_info.netmask.addr = htonl(~((1U << (32 - cfg->sta_netmask_len)) - 1));
+        if (cfg->wifi.sta.netmask_len <= 32) {
+            ip_info.netmask.addr = htonl(~((1U << (32 - cfg->wifi.sta.netmask_len)) - 1));
         } else {
             ip_info.netmask.addr = htonl(0xFFFFFF00);
         }
@@ -204,8 +204,8 @@ static bool wifi_start_sta(void)
     }
 
     wifi_config_t wc = {0};
-    strncpy((char *)wc.sta.ssid, cfg->sta_ssid, sizeof(wc.sta.ssid) - 1);
-    strncpy((char *)wc.sta.password, cfg->sta_password, sizeof(wc.sta.password) - 1);
+    strncpy((char *)wc.sta.ssid, cfg->wifi.sta.ssid, sizeof(wc.sta.ssid) - 1);
+    strncpy((char *)wc.sta.password, cfg->wifi.sta.password, sizeof(wc.sta.password) - 1);
     wc.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     esp_wifi_set_mode(WIFI_MODE_STA);
@@ -251,10 +251,10 @@ static void wifi_start_ap(void)
     led_blink_start();
 
     wifi_config_t wc = {0};
-    strncpy((char *)wc.ap.ssid, cfg->ap_ssid, sizeof(wc.ap.ssid) - 1);
-    strncpy((char *)wc.ap.password, cfg->ap_password, sizeof(wc.ap.password) - 1);
+    strncpy((char *)wc.ap.ssid, cfg->wifi.ap.ssid, sizeof(wc.ap.ssid) - 1);
+    strncpy((char *)wc.ap.password, cfg->wifi.ap.password, sizeof(wc.ap.password) - 1);
     wc.ap.max_connection = 4;
-    wc.ap.authmode = strlen(cfg->ap_password) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+    wc.ap.authmode = strlen(cfg->wifi.ap.password) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
 
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &wc);
@@ -371,7 +371,7 @@ esp_err_t wifi_manager_init(app_config_t *config)
     xTaskCreate(reconnect_task, "wifi_reconnect", 2048, NULL, 5, &reconnect_task_handle);
     RETURN_ON_NULL(reconnect_task_handle, ESP_ERR_NO_MEM);
 
-    if (strlen(cfg->sta_ssid)) {
+    if (strlen(cfg->wifi.sta.ssid)) {
         if (!wifi_start_sta()) {
             wifi_start_ap();
         }

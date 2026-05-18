@@ -3,6 +3,7 @@
 
 #include "esp_http_server.h"
 #include "app_config.h"
+#include "router.h"
 
 /**
  * @brief Start the internal web server.
@@ -17,6 +18,6 @@ esp_err_t start_webserver(app_config_t *config);
  * @param data Pointer to the DMX payload.
  * @param length Length of the payload.
  */
-void send_ws_dmx_data(uint16_t universe, const uint8_t *data, uint16_t length);
+void send_ws_dmx_data(uint16_t universe, const uint8_t *data, uint16_t length, dmx_data_source_t source);
 
 #endif // WEB_SERVER_H

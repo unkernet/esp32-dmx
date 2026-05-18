@@ -34,10 +34,9 @@ typedef struct {
 } ws_client_info_t;
 
 typedef struct __attribute__((packed)) {
-    uint8_t supported;
+    uint32_t supported;
     char dev_name[5];
-    char dmx_name[16];
-    char dmx_2_name[16];
+    char dmx_name[4][16];
 } device_meta_t;
 
 static const char *TAG = "WEB_SERVER";
@@ -69,8 +68,17 @@ static void ws_send_task(void *arg) {
     }
 }
 
-void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
+void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length, dmx_data_source_t source) {
     if (!app_config) return;
+
+    if (source == DATA_SOURCE_WS || source == DATA_SOURCE_LUA ||
+        (source == DATA_SOURCE_ARTNET && !(app_config->enabled_modules & MOD_EN_ARTNET_WS)))
+    {
+        // Do not send data from Websocket itself,
+        // from DATA_SOURCE_LUA (only from DATA_SOURCE_LUA_DEBUG)
+        // And from Art-Net, if MOD_EN_ARTNET_WS is not enabled
+        return;
+    }
 
     if (xSemaphoreTake(ws_mutex, 0) == pdTRUE) {
         bool active = active_ws_client.active;
@@ -217,56 +225,26 @@ static esp_err_t http_get_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    uint8_t supported = MOD_EN_ARTNET_OUT;
-    #ifdef _DMX_RX_EN
-    supported |= MOD_EN_DMX_IN;
-    #endif
-    #ifdef _DMX_TX_EN
-    supported |= MOD_EN_DMX_OUT;
-    #endif
-    #ifdef _DMX_2_RX_EN
-    supported |= MOD_EN_DMX_2_IN;
-    #endif
-    #ifdef _DMX_2_TX_EN
-    supported |= MOD_EN_DMX_2_OUT;
-    #endif
-    #ifdef AMBITFUL_BLE
-    supported |= MOD_EN_AMBITFUL;
-    #endif
-    #ifdef WS2812_PIN
-    supported |= MOD_EN_WS2812;
-    #endif
-    #ifdef LUA_INTERPRETER
-    supported |= MOD_EN_LUA;
-    #endif
-
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_send_chunk(req, (const char*)app_config, sizeof(app_config_t));
 
     device_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    meta.supported = supported;
+    meta.supported = SUPPORTED_MODULES;
     snprintf(meta.dev_name, sizeof(meta.dev_name), "%02X%02X", mac[4], mac[5]);
-    #ifdef _DMX_EN
-    strncpy(meta.dmx_name,
-        #ifdef DMX_NAME
-        DMX_NAME
-        #else
-        "DMX"
-        #endif
-        , sizeof(meta.dmx_name) - 1
-    );
+    #ifdef _DMX_0_EN
+    strncpy(meta.dmx_name[0], DMX_0_NAME, sizeof(meta.dmx_name[0]) - 1);
+    #endif
+    #ifdef _DMX_1_EN
+    strncpy(meta.dmx_name[1], DMX_1_NAME, sizeof(meta.dmx_name[1]) - 1);
     #endif
     #ifdef _DMX_2_EN
-    strncpy(meta.dmx_2_name,
-        #ifdef DMX_2_NAME
-        DMX_2_NAME
-        #else
-        "DMX 2"
-        #endif
-        , sizeof(meta.dmx_2_name) - 1
-    );
+    strncpy(meta.dmx_name[2], DMX_2_NAME, sizeof(meta.dmx_name[2]) - 1);
+    #endif
+    #ifdef _DMX_3_EN
+    strncpy(meta.dmx_name[3], DMX_3_NAME, sizeof(meta.dmx_name[3]) - 1);
     #endif
     httpd_resp_send_chunk(req, (const char*)&meta, sizeof(meta));
 
@@ -294,7 +272,8 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    int ret = httpd_req_recv(req, (char*)app_config, req->content_len);
+    app_config_t new_config;
+    int ret = httpd_req_recv(req, (char*)&new_config, req->content_len);
     if (ret <= 0) {
         if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
             httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Request timed out");
@@ -304,8 +283,13 @@ static esp_err_t http_put_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    if (new_config.magic != app_config->magic || new_config.version != app_config->version) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid config header");
+        return ESP_FAIL;
+    }
+
     ESP_LOGI(TAG, "Received new configuration. Saving and restarting...");
-    esp_err_t err = app_config_save(app_config);
+    esp_err_t err = app_config_save(&new_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save configuration: %s", esp_err_to_name(err));
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save config");

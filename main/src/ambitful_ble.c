@@ -98,7 +98,7 @@ static void mode_cct(uint8_t group, uint8_t power, uint8_t cct, uint8_t rg) { //
     rg = (rg * 21) >> 8; // 0-20
 
     // ibeacon_data[4] = 0xAB;
-    ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
+    ibeacon_data[5] = app_config->ambitful.channel * 10 + group + 1;
     ibeacon_data[6] = 0; // mode
     ibeacon_data[7] = cct;
 
@@ -125,7 +125,7 @@ static void mode_hsl(uint8_t group, uint8_t power, uint8_t h, uint8_t s) { // mo
     uint16_t hue = ((uint32_t)h * 361) >> 8; // 0 - 359
 
     // ibeacon_data[4] = 0xAB;
-    ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
+    ibeacon_data[5] = app_config->ambitful.channel * 10 + group + 1;
     ibeacon_data[6] = 1; // mode
     ibeacon_data[7] = 0;
 
@@ -159,7 +159,7 @@ static void mode_fx(uint8_t group, uint8_t power, uint8_t scene, uint8_t speed) 
     speed = ((speed * 3) >> 8) + 1; // 1-3
 
     // ibeacon_data[4] = 0xAB;
-    ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
+    ibeacon_data[5] = app_config->ambitful.channel * 10 + group + 1;
     ibeacon_data[6] = 2; // mode
     ibeacon_data[7] = scene;
 
@@ -194,7 +194,7 @@ static void mode_rgb(uint8_t group, uint8_t r, uint8_t g, uint8_t b, uint8_t w, 
     if (power < y) power = y;
 
     // ibeacon_data[4] = 0xAB;
-    ibeacon_data[5] = app_config->ambitful_channel * 10 + group + 1;
+    ibeacon_data[5] = app_config->ambitful.channel * 10 + group + 1;
     ibeacon_data[6] = 5; // mode
     ibeacon_data[7] = 0;
 
@@ -249,7 +249,7 @@ static void adv_next_group() {
     xSemaphoreTake(s_ble_data_mutex, portMAX_DELAY);
 
     uint8_t max_priority = 0;
-    uint8_t ambitful_groups = app_config->ambitful_groups;
+    uint8_t ambitful_groups = app_config->ambitful.groups;
     uint8_t group;
     uint8_t * group_data;
     // First, we need to find a group with max priproty
@@ -342,14 +342,14 @@ static void restart_advertise_task(void *arg) {
 
 esp_err_t ambitful_ble_init(app_config_t *config)
 {
-    if ((config->enabled_modules & MOD_EN_AMBITFUL) == 0 || !config->ambitful_groups) {
+    if ((config->enabled_modules & MOD_EN_AMBITFUL) == 0 || !config->ambitful.groups) {
         ESP_LOGI(TAG, "disabled");
         return ESP_OK;
     }
-    if (config->ambitful_groups > MAX_AMBITFUL_GROUPS) {
-        config->ambitful_groups = MAX_AMBITFUL_GROUPS;
+    if (config->ambitful.groups > MAX_AMBITFUL_GROUPS) {
+        config->ambitful.groups = MAX_AMBITFUL_GROUPS;
     }
-    if (config->ambitful_addr + config->ambitful_groups * AMBITFUL_SIZE >= DMX_LEN) {
+    if (config->ambitful.addr + config->ambitful.groups * AMBITFUL_SIZE >= DMX_LEN) {
         return ESP_ERR_INVALID_SIZE; // Invalid configuration
     }
     memset(groups_priority, 0, sizeof(groups_priority));
@@ -378,12 +378,12 @@ esp_err_t ambitful_ble_init(app_config_t *config)
 }
 
 void send_ambitful_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (app_config == NULL || app_config->ambitful_universe != universe) {
+    if (app_config == NULL || app_config->ambitful.universe != universe) {
         return;
     }
 
-    const uint8_t groups = app_config->ambitful_groups;
-    const uint16_t addr = app_config->ambitful_addr;
+    const uint8_t groups = app_config->ambitful.groups;
+    const uint16_t addr = app_config->ambitful.addr;
 
     if (length < addr + (groups * AMBITFUL_SIZE)) {
         return;

@@ -45,7 +45,7 @@ static void ws2812_tx_task(void *arg)
 }
 
 void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (!app_config || app_config->ws2812_universe != universe) {
+    if (!app_config || app_config->ws2812_ports[0].universe != universe) {
         return;
     }
 
@@ -64,7 +64,7 @@ void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) 
 }
 
 esp_err_t ws2812_init(app_config_t *config) {
-    if ((config->enabled_modules & MOD_EN_WS2812) == 0) {
+    if ((config->enabled_modules & MOD_EN_WS2812_1) == 0) {
         ESP_LOGI(TAG, "disabled");
         return ESP_OK; // Disabled
     }

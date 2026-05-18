@@ -121,6 +121,8 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     tx_packet.len = sizeof(*reply);
     tx_packet.addr = *source_addr;
 
+    uint8_t num_ports = ((_BIT_DMX_0_RX_EN | _BIT_DMX_0_TX_EN) ? 1 : 0) + ((_BIT_DMX_1_RX_EN | _BIT_DMX_1_TX_EN) ? 1 : 0) + ((_BIT_DMX_2_RX_EN | _BIT_DMX_2_TX_EN) ? 1 : 0) + ((_BIT_DMX_3_RX_EN | _BIT_DMX_3_TX_EN) ? 1 : 0);
+
     memcpy(reply->id, ARTNET_ID, ARTNET_ID_LENGTH);
     reply->opcode = ARTNET_OP_POLLREPLY;
     reply->port = ARTNET_PORT; // Port is 6454
@@ -131,12 +133,32 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
     // reply->ubea_version = 0;
     reply->status1 = 0x20; // Indicator state: Normal, Port-Address programming enabled
     // reply->esta_mfg = (0); // Unregistered manufacturer
-    reply->num_ports = htons(1); // One DMX port
-    reply->port_types[0] = (enabled_modules & MOD_EN_DMX_IN ? 0x40 : 0) | (enabled_modules & MOD_EN_DMX_OUT ? 0x80 : 0);
-    reply->good_input[0] = (enabled_modules & MOD_EN_DMX_IN ? 0x80 : 0); // Data received, no errors
-    reply->good_output[0] = (enabled_modules & MOD_EN_DMX_OUT ? 0x80 : 0); // Data transmitted, no errors
-    reply->sw_in[0] = app_config->dmx_in_universe;
-    reply->sw_out[0] = app_config->dmx_out_universe;
+    reply->num_ports = htons(num_ports);
+
+    reply->port_types[0] = ((_BIT_DMX_0_RX_EN & enabled_modules & MOD_EN_DMX_0_IN) ? 0x40 : 0) | ((_BIT_DMX_0_TX_EN & enabled_modules & MOD_EN_DMX_0_OUT) ? 0x80 : 0);
+    reply->good_input[0] = ((_BIT_DMX_0_RX_EN & enabled_modules & MOD_EN_DMX_0_IN) ? 0x80 : 0); // Data received, no errors
+    reply->good_output[0] = ((_BIT_DMX_0_TX_EN & enabled_modules & MOD_EN_DMX_0_OUT) ? 0x80 : 0); // Data transmitted, no errors
+    reply->sw_in[0] = app_config->dmx_ports[0].in_universe;
+    reply->sw_out[0] = app_config->dmx_ports[0].out_universe;
+
+    reply->port_types[1] = ((_BIT_DMX_1_RX_EN & enabled_modules & MOD_EN_DMX_1_IN) ? 0x40 : 0) | ((_BIT_DMX_1_TX_EN & enabled_modules & MOD_EN_DMX_1_OUT) ? 0x80 : 0);
+    reply->good_input[1] = ((_BIT_DMX_1_RX_EN & enabled_modules & MOD_EN_DMX_1_IN) ? 0x80 : 0); 
+    reply->good_output[1] = ((_BIT_DMX_1_TX_EN & enabled_modules & MOD_EN_DMX_1_OUT) ? 0x80 : 0);
+    reply->sw_in[1] = app_config->dmx_ports[1].in_universe;
+    reply->sw_out[1] = app_config->dmx_ports[1].out_universe;
+
+    reply->port_types[2] = ((_BIT_DMX_2_RX_EN & enabled_modules & MOD_EN_DMX_2_IN) ? 0x40 : 0) | ((_BIT_DMX_2_TX_EN & enabled_modules & MOD_EN_DMX_2_OUT) ? 0x80 : 0);
+    reply->good_input[2] = ((_BIT_DMX_2_RX_EN & enabled_modules & MOD_EN_DMX_2_IN) ? 0x80 : 0);
+    reply->good_output[2] = ((_BIT_DMX_2_TX_EN & enabled_modules & MOD_EN_DMX_2_OUT) ? 0x80 : 0);
+    reply->sw_in[2] = app_config->dmx_ports[2].in_universe;
+    reply->sw_out[2] = app_config->dmx_ports[2].out_universe;
+
+    reply->port_types[3] = ((_BIT_DMX_3_RX_EN & enabled_modules & MOD_EN_DMX_3_IN) ? 0x40 : 0) | ((_BIT_DMX_3_TX_EN & enabled_modules & MOD_EN_DMX_3_OUT) ? 0x80 : 0);
+    reply->good_input[3] = ((_BIT_DMX_3_RX_EN & enabled_modules & MOD_EN_DMX_3_IN) ? 0x80 : 0);
+    reply->good_output[3] = ((_BIT_DMX_3_TX_EN & enabled_modules & MOD_EN_DMX_3_OUT) ? 0x80 : 0);
+    reply->sw_in[3] = app_config->dmx_ports[3].in_universe;
+    reply->sw_out[3] = app_config->dmx_ports[3].out_universe;
+
     // reply->acn_priority = 0;
     // reply->sw_macro = 0;
     // reply->sw_remote = 0;
@@ -159,6 +181,9 @@ static void send_artpollreply(struct sockaddr_in *source_addr) {
 }
 
 static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
+    if (app_config == NULL || !(app_config->enabled_modules & MOD_EN_ARTNET_IN)) {
+        return;
+    }
     uint16_t universe = dmx_packet->universe;
     uint16_t length = ntohs(dmx_packet->length);
 
@@ -172,7 +197,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
 }
 
 static void handle_artnet_packet(const char *rx_buffer, int len, struct sockaddr_in *source_addr) {
-    if (len < sizeof(artnet_header_t)) {
+    if (app_config == NULL || len < sizeof(artnet_header_t)) {
         return;
     }
 
@@ -219,6 +244,10 @@ static void artnet_server_task(void *pvParameters)
 }
 
 esp_err_t start_artnet_server(app_config_t *config) {
+    if ((config->enabled_modules & (MOD_EN_ARTNET_OUT | MOD_EN_ARTNET_IN)) == 0) {
+        return ESP_OK;
+    }
+
     RETURN_ON_NULL(tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(tx_sem);
 
@@ -251,8 +280,14 @@ esp_err_t start_artnet_server(app_config_t *config) {
     return ESP_OK;
 }
 
-void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length) {
-    if (app_config == NULL || !(app_config->enabled_modules & MOD_EN_ARTNET_OUT)) {
+void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length, dmx_data_source_t source) {
+    if (app_config == NULL || !(app_config->enabled_modules & MOD_EN_ARTNET_OUT) ||
+        source == DATA_SOURCE_ARTNET || source == DATA_SOURCE_LUA ||
+        (source == DATA_SOURCE_WS && !(app_config->enabled_modules & MOD_EN_ARTNET_WS)))
+    {
+        // Do not send data back from Art-Net itself,
+        // from DATA_SOURCE_LUA (only from DATA_SOURCE_LUA_DEBUG),
+        // and from Websocket, if MOD_EN_ARTNET_WS is not enabled
         return;
     }
 

@@ -18,9 +18,22 @@ export function Card({ title, children, footer, notice, btn, class: className })
  * Input field with shaded description (tooltip style)
  */
 export function FormField({ label, description, children }) {
+  const isCheckbox = children && children.type === 'input' && children.props?.type === 'checkbox';
+  if (isCheckbox) {
+    return <label class="field">
+      {children}
+      {label}
+      {description && (
+        <div class="description">
+          {description}
+        </div>
+      )}
+    </label>;
+  }
+
   return (
     <div class="field">
-      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+      <label>
         {label}
       </label>
       {description && (

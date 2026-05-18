@@ -4,6 +4,7 @@ import { config } from "../signals";
 import { API } from "../api";
 import { Card, FormField } from "./Common";
 import { RefreshCw, Search, Edit2 } from "lucide-preact";
+import { updateConfig } from '../util';
 
 export function WifiTab() {
   const [scanning, setScanning] = useState(false);
@@ -26,10 +27,6 @@ export function WifiTab() {
     }
   };
 
-  const updateConfig = (key, val) => {
-    config.value = { ...config.value, [key]: val }
-  };
-
   const { value: configValue } = config;
 
     return (
@@ -44,11 +41,11 @@ export function WifiTab() {
               <input 
                 type="text" 
                 placeholder="Enter SSID" 
-                value={configValue.sta_ssid}
-                onInput={(e) => updateConfig('sta_ssid', e.target.value)}
+                value={configValue.wifi.sta.ssid}
+                onInput={(e) => updateConfig('wifi.sta.ssid', e.target.value)}
               />
             ) : (
-              <select onInput={(e) => updateConfig('sta_ssid', e.target.value)} value={configValue.sta_ssid}>
+              <select onInput={(e) => updateConfig('wifi.sta.ssid', e.target.value)} value={configValue.wifi.sta.ssid}>
                 {scanResults.map(net => (
                   <option value={net.ssid}>{net.ssid} ({net.rssi}dBm)</option>
                 ))}
@@ -68,27 +65,26 @@ export function WifiTab() {
           <input 
             type="text" 
             placeholder="Network password"
-            value={configValue.sta_password}
-            onInput={(e) => updateConfig('sta_password', e.target.value)}
+            value={configValue.wifi.sta.password}
+            onInput={(e) => updateConfig('wifi.sta.password', e.target.value)}
           />
         </FormField>
 
-        <label>
+        <FormField label="Enable DHCP">
           <input 
             type="checkbox" 
             role="switch"
-            checked={configValue.sta_dhcp_enabled}
-            onInput={(e) => updateConfig('sta_dhcp_enabled', e.target.checked ? 1 : 0)}
+            checked={configValue.wifi.sta.dhcp_enabled}
+            onInput={(e) => updateConfig('wifi.sta.dhcp_enabled', e.target.checked ? 1 : 0)}
           />
-          Enable DHCP
-        </label>
+        </FormField>
 
-        { configValue.sta_dhcp_enabled ? null : <>
+        { configValue.wifi.sta.dhcp_enabled ? null : <>
           <FormField label="IP address">
             <input 
               type="text" 
-              value={configValue.sta_ip_cidr}
-              onInput={(e) => updateConfig('sta_ip_cidr', e.target.value)}
+              value={configValue.wifi.sta.ip_cidr}
+              onInput={(e) => updateConfig('wifi.sta.ip_cidr', e.target.value)}
             />
           </FormField>
         </>}
@@ -98,15 +94,15 @@ export function WifiTab() {
         <FormField label="AP SSID" description="SSID for the device's own hotspot.">
           <input 
             type="text" 
-            value={configValue.ap_ssid}
-            onInput={(e) => updateConfig('ap_ssid', e.target.value)}
+            value={configValue.wifi.ap.ssid}
+            onInput={(e) => updateConfig('wifi.ap.ssid', e.target.value)}
           />
         </FormField>
         <FormField label="AP Password" description="Min 8 characters.">
           <input 
             type="text" 
-            value={configValue.ap_password}
-            onInput={(e) => updateConfig('ap_password', e.target.value)}
+            value={configValue.wifi.ap.password}
+            onInput={(e) => updateConfig('wifi.ap.password', e.target.value)}
           />
         </FormField>
       </Card>

@@ -54,15 +54,16 @@ export function App() {
   const [waitReboot, setWaitReboot] = useState(false);
 
   const { supported } = config.value?.meta || { supported: 0 };
-  console.log(supported)
+
   // Filter tabs based on supported modules
   const filteredTabs = useMemo(() => {
     const supportedMap = {
-      dmx: ['dmx_in', 'dmx_out', 'dmx_2_in', 'dmx_2_out'],
+      artnet: ['artnet_out', 'artnet_in'],
+      dmx: ['dmx_0_in', 'dmx_0_out', 'dmx_1_in', 'dmx_1_out', 'dmx_2_in', 'dmx_2_out', 'dmx_3_in', 'dmx_3_out'],
       ble: ['ambitful'],
-      ws2812: ['ws2812'],
+      ws2812: ['ws2812_0', 'ws2812_1', 'ws2812_2', 'ws2812_3'],
       scripting: ['lua'],
-    }
+    };
 
     return tabs.filter(tab => {
       const flags = supportedMap[tab.id];
