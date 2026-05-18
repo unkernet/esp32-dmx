@@ -10,12 +10,17 @@ idf_component_register(SRCS ${SRCS}
 file(GLOB_RECURSE UI_SRCS
     "${CMAKE_SOURCE_DIR}/ui/src/*"
 )
+unset(SYSTEM_PATH CACHE)
+set(SYSTEM_PATH "$ENV{SYSTEM_PATH}")
+if("${SYSTEM_PATH}" STREQUAL "")
+    set(SYSTEM_PATH "$ENV{PATH}")
+endif()
 add_custom_command(
-    OUTPUT "${CMAKE_SOURCE_DIR}/data/index.js.gz" 
-    DEPENDS ${UI_SRCS}
-    COMMAND ${CMAKE_COMMAND} -E env "PATH=$ENV{SYSTEM_PATH}" npm run build
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/ui"
     COMMENT "Compiling frontend assets with node..."
+    DEPENDS ${UI_SRCS}
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/ui"
+    COMMAND ${CMAKE_COMMAND} -E env "PATH=${SYSTEM_PATH}" npm run build
+    OUTPUT "${CMAKE_SOURCE_DIR}/data/index.js.gz" 
     VERBATIM
 )
 add_custom_target(build-ui

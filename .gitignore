@@ -6,6 +6,7 @@
 node_modules
 *.gz
 .DS_Store
+/.pio
 /build
 /managed_components
 /sdkconfig.old

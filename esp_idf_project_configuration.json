@@ -1,0 +1,8 @@
+{
+  "c3": {
+    "build": {
+      "sdkconfigFilePath": "sdkconfig.c3"
+    },
+    "idfTarget": "esp32c3"
+  }
+}
