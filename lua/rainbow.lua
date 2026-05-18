@@ -2,7 +2,7 @@
 --
 
 local leds = 50
-local output_universe = 20
+local output_universe = 10
 local network = false -- do not output to websocket
 
 local hsv2rgb_rainbow = require('hsv2rgb').hsv2rgb_rainbow

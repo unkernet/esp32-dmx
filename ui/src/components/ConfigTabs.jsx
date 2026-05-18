@@ -167,26 +167,37 @@ export function ConfigTabs({ moduleName }) {
     </Card>
   );
 
-  const renderWs2812Config = () => (
-    <Card title="WS2812 Addressable LED Configuration">
-      <FormField label="Enable WS2812 Output">
-        <input
-          type="checkbox" 
-          role="switch" 
-          checked={configValue.enabled_modules.ws2812_0}
-          onInput={(e) => updateConfig('enabled_modules.ws2812_0', e.target.checked)} 
-        />
-      </FormField>
-      <FormField label="WS2812 Universe" description="DMX universe to control the LED strip.">
-        <input 
-          type="number" 
-          min="0" max="32767" 
-          value={parseInt(configValue.ws2812_ports[0].universe)}
-          onInput={(e) => updateConfig('ws2812_ports.0.universe', parseInt(e.target.value) || 0)} 
-        />
-      </FormField>
+  const renderWs2812Config = () => {
+    const ws2812Supported = Object.keys(supported).filter(k => k.startsWith('ws2812_') && supported[k]);
+
+    return <Card title="WS2812 Addressable LED Configuration">
+      {ws2812Supported.map((mod, i) => {
+        const port = configValue.ws2812_ports[i];
+        return (
+          <div key={mod}>
+            {ws2812Supported.length > 1 && <h6>WS2812 Channel {i}</h6>}
+            <FormField label="Enable Output">
+              <input
+                type="checkbox" 
+                role="switch" 
+                checked={configValue.enabled_modules[mod]}
+                onInput={(e) => updateConfig(`enabled_modules.${mod}`, e.target.checked)} 
+              />
+            </FormField>
+            <FormField label="WS2812 Universe" description="DMX universe to control the LED strip.">
+              <input 
+                type="number" 
+                min="0" max="32767" 
+                value={parseInt(port.universe)}
+                onInput={(e) => updateConfig(`ws2812_ports.${i}.universe`, parseInt(e.target.value) || 0)} 
+              />
+            </FormField>
+          </div>
+        );
+      })}
     </Card>
-  );
+  };
+
 
   return (
     <>

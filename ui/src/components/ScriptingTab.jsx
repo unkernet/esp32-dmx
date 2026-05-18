@@ -339,9 +339,9 @@ export function ScriptingTab() {
           <h4>Example:</h4>
           <pre style={{ background: "var(--pico-code-background)", padding: "10px" }}>{
 `while true do
-  local data = dmx.read(1, 100)
+  local data = dmx.read(1, 100) -- read data from universe 1
   if data then
-    dmx.send(2, data)
+    dmx.send(2, data) -- output it to universe 2
   end
   sleep(100)
 end`

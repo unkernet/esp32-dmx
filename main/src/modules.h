@@ -171,10 +171,10 @@
 0 )
 
 // By default enable all available hardware modules except AMBITFUL_BLE (consume lot of memory),
-// ARTNET_WS (creates CPU load), and LUA_INTERPRETER (can not be disabled if supported by the firmware)
+// ARTNET_WS (creates CPU load), first WS2812 channel and LUA_INTERPRETER (can not be disabled if supported by the firmware)
 #define DEFAULT_ENABLED_MODULES ( \
-    _BIT_DMX_0_RX_EN | _BIT_DMX_0_TX_EN | _BIT_DMX_1_RX_EN | _BIT_DMX_1_TX_EN | _BIT_DMX_2_RX_EN | _BIT_DMX_2_TX_EN | _BIT_DMX_3_RX_EN | _BIT_DMX_3_TX_EN | \
-    _BIT_WS2812_0_EN | _BIT_WS2812_1_EN | _BIT_WS2812_2_EN | _BIT_WS2812_3_EN | \
+    _BIT_DMX_0_RX_EN | _BIT_DMX_0_TX_EN | _BIT_DMX_1_RX_EN | _BIT_DMX_1_TX_EN | \
+    _BIT_WS2812_0_EN | \
     _BIT_ARTNET_EN | \
 0 )
 

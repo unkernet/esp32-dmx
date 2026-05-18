@@ -271,9 +271,9 @@ esp_err_t start_artnet_server(app_config_t *config) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
     }
 
-    xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 7, &srv_task);
+    xTaskCreate(artnet_server_task, "artnet_server", 2048, NULL, 5, &srv_task);
     RETURN_ON_NULL(srv_task, ESP_ERR_NO_MEM);
-    xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 5, &send_task);
+    xTaskCreate(artnet_sender_task, "artnet_sender", 1024, NULL, 7, &send_task);
     RETURN_ON_NULL(send_task, ESP_ERR_NO_MEM);
 
     app_config = config;

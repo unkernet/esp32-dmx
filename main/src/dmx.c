@@ -196,6 +196,10 @@ static esp_err_t dmx_init_port(const dmx_port_settings_t *settings, int8_t uart_
         gpio_set_level(en_pin, 0);
     }
 
+    if (uart_num < 0 || uart_num >= UART_NUM_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     dmx_port_t *port = malloc(sizeof(dmx_port_t));
     RETURN_ON_NULL(port, ESP_ERR_NO_MEM);
     memset(port, 0, sizeof(dmx_port_t));

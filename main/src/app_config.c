@@ -38,10 +38,11 @@ void app_config_get_default(app_config_t *config) {
     config->dmx_ports[1].repeat_interval = (550 / 5);
     config->dmx_ports[1].repeat_time = 0xff;
 
-    config->ambitful.universe = 10;
+    config->ws2812_ports[0].universe = 10;
+
+    config->ambitful.universe = 15;
     config->ambitful.addr = 0;
     config->ambitful.channel = 1;
     config->ambitful.groups = 4;
 
-    config->ws2812_ports[0].universe = 20;
 }

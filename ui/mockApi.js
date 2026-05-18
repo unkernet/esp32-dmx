@@ -79,6 +79,7 @@ const metaCfg = new Uint8Array(serializeMeta({
     artnet_ws: true,
     ambitful: true,
     ws2812_0: true,
+    ws2812_1: true,
     lua: true,
   },
   dev_name: 'TEST',
