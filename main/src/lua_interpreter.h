@@ -13,7 +13,7 @@ esp_err_t lua_interpreter_init(void);
 /**
  * @brief Run a Lua script from SPIFFS.
  * 
- * @param filename The path to the script (e.g., "/spiffs/script.lua").
+ * @param filename The path to the script (e.g., "/user/script.lua").
  * @return ESP_OK if the script started, ESP_ERR_INVALID_STATE if a script is already running.
  */
 esp_err_t lua_interpreter_run(const char *filename);

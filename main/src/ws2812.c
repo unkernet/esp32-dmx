@@ -71,7 +71,7 @@ void send_ws2812_data(uint16_t universe, const uint8_t * data, uint16_t length) 
 
 static esp_err_t ws2812_init_port(ws2812_settings_t *settings, int gpio_num) {
     if (registered_port_count >= WS2812_PORT_COUNT_MAX) {
-        ESP_LOGE(TAG, "Hardware RMT channel limit reached, cannot init WS2812 on GPIO %d", gpio_num);
+        ESP_LOGE(TAG, "Hardware RMT channel limit reached");
         return ESP_ERR_NOT_SUPPORTED;
     }
 

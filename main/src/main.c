@@ -53,24 +53,28 @@ void app_main() {
         ESP_LOGI(TAG, "Configuration loaded successfully from NVS.");
     }
 
-    esp_vfs_spiffs_conf_t conf = {
-      .base_path = "/spiffs",
-      .partition_label = NULL,
-      .max_files = 5,
+    esp_vfs_spiffs_conf_t data_conf = {
+      .base_path = "/data",
+      .partition_label = "data",
+      .max_files = 4,
       .format_if_mount_failed = true
     };
     
-    err = esp_vfs_spiffs_register(&conf);
-
+    err = esp_vfs_spiffs_register(&data_conf);
     if (err != ESP_OK) {
-        if (err == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        } else if (err == ESP_ERR_NOT_FOUND) {
-            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(err));
-        }
-        return;
+        ESP_LOGE(TAG, "Failed to mount /data (%s)", esp_err_to_name(err));
+    }
+
+    esp_vfs_spiffs_conf_t user_conf = {
+      .base_path = "/user",
+      .partition_label = "user",
+      .max_files = 8,
+      .format_if_mount_failed = true
+    };
+    
+    err = esp_vfs_spiffs_register(&user_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to mount /user (%s)", esp_err_to_name(err));
     }
 
     LOG_ON_ERROR(wifi_manager_init(&app_config), TAG, "wifi_manager_init failed");

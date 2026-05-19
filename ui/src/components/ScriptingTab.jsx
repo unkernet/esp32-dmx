@@ -4,6 +4,7 @@ import { Card, Modal } from "./Common";
 import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle, Plus, Save } from "lucide-preact";
 // import { ccs } from '../util';
 
+const tempScriptName = '---';
 let unsavedScript = "";
 
 export function ScriptingTab() {
@@ -25,8 +26,8 @@ export function ScriptingTab() {
     try {
       setLoading(true);
       const data = await API.getScripts();
-      if (data.running === '|') {
-        data.scripts.unshift('|');
+      if (data.running === tempScriptName) {
+        data.scripts.unshift(tempScriptName);
       }
       setRunningScript(data.running || null);
       setScripts(data.scripts || []);
@@ -235,7 +236,7 @@ export function ScriptingTab() {
           ) : (
             scripts.map((script) => {
               const running = runningScript === script;
-              const temp = running && script === '|';
+              const temp = running && script === tempScriptName;
               const name = temp ? '📝' : script;
               const luac = name.endsWith('.luac');
               return <li key={script} class={running ? "run" : null}>
@@ -271,7 +272,7 @@ export function ScriptingTab() {
         footer={
           <>
             { scriptError && !hideError ? <div class="err">{scriptError}</div> : null }
-            <button class={(runningScript !== '|' || hideError) && "outline"} onClick={handleRunStream} title="Run without saving">
+            <button class={(runningScript !== tempScriptName || hideError) && "outline"} onClick={handleRunStream} title="Run without saving">
               <PlayBtn size={20} /> Run
             </button>
             <button onClick={handleSaveScript} disabled={!currentScriptFileName} title="Save to flash">

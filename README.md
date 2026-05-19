@@ -11,7 +11,7 @@ A high-performance, flexible DMX-over-WiFi gateway based on the ESP32. This proj
 *   **Multi-Channel DMX512:** Full-duplex DMX support across multiple channels (hardware dependent). Each port supports:
     *   Configurable **automatic retransmission**: The system can repeat the last received packet at a specified **interval** for a set **duration** if the source signal is lost.
 *   **WS2812 Addressable LEDs:** Multi-channel support for driving LED strips (Neopixels) directly from DMX universes.
-*   **Ambitful BLE Control:** Control Ambitful brand Bluetooth LED lamps via DMX. Supports up to 8 independent control groups.
+*   **Ambitful BLE Control:** Control Ambitful brand Bluetooth LED lamps like Ambitful A2 / A2 Pro via DMX. Supports up to 8 independent control groups.
 
 ---
 
@@ -53,6 +53,21 @@ The gateway features an integrated **Lua 5.5** interpreter, allowing for complex
 *   **Routing:** Scripts can read data from any DMX universe and output to any other universe (physical or virtual).
 *   **Examples:** Check the `/lua` folder for templates involving **channel merging**, **value scaling**, and **HSV-to-RGB conversion**.
 
+---
+
+## Ambitful BLE Channel Structure
+
+The system can control up to **8 independent lamp groups**. Each group is assigned a block of **8 DMX channels**. The behavior of channels 2-7 within each group depends on the **Mode** set in Channel 1.
+
+| Mode (CH 1) | CH 2 | CH 3 | CH 4 | CH 5 | CH 6 | CH 7 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **0-63: RGBWY** | Red | Green | Blue | White | Yellow | - |
+| **64-127: HSL** | Power | Hue | Saturation | - | - | - |
+| **128-191: CCT** | Power | Color Temp | Rg (Tint) | - | - | - |
+| **192-255: FX** | Power | Scene | Speed | - | - | - |
+
+---
+
 ## Building the Project
 
 The project can be built using either the **ESP-IDF** (recommended) or **PlatformIO IDE**.
@@ -78,19 +93,6 @@ The gateway is highly modular. You can easily enable or disable features to fit 
 
 *   **Memory Efficiency:** Disabling unused modules (e.g., the Lua interpreter or BLE) at build time significantly reduces Flash and RAM usage.
 *   **Dynamic UI:** The Web UI automatically adapts to your build. If a module is disabled in the firmware, its corresponding configuration tabs and options will not appear in the dashboard.
-
----
-
-## Ambitful BLE Channel Structure
-
-The system can control up to **8 independent lamp groups**. Each group is assigned a block of **8 DMX channels**. The behavior of channels 2-7 within each group depends on the **Mode** set in Channel 1.
-
-| Mode (CH 1) | CH 2 | CH 3 | CH 4 | CH 5 | CH 6 | CH 7 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **0-63: RGBWY** | Red | Green | Blue | White | Yellow | - |
-| **64-127: HSL** | Power | Hue | Saturation | - | - | - |
-| **128-191: CCT** | Power | Color Temp | Rg (Tint) | - | - | - |
-| **192-255: FX** | Power | Scene | Speed | - | - | - |
 
 ---
 

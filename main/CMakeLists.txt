@@ -6,7 +6,6 @@ idf_component_register(SRCS ${SRCS}
 )
 
 # Build UI
-# Use `idf.py storage-flash` to upload UI manually
 file(GLOB_RECURSE UI_SRCS
     "${CMAKE_SOURCE_DIR}/ui/src/*"
 )
@@ -26,4 +25,4 @@ add_custom_command(
 add_custom_target(build-ui
     DEPENDS "${CMAKE_SOURCE_DIR}/data/index.js.gz"
 )
-spiffs_create_partition_image(storage ../data DEPENDS build-ui)
+spiffs_create_partition_image(data ../data FLASH_IN_PROJECT DEPENDS build-ui)

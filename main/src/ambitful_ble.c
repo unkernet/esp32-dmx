@@ -241,7 +241,7 @@ static void set_fields() {
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
-        ESP_LOGE(TAG, "error ble_gap_adv_set_fields; rc=%d", rc);
+        ESP_LOGE(TAG, "ble_gap_adv_set_fields; rc=%d", rc);
     }
 }
 

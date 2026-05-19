@@ -188,7 +188,7 @@ static void handle_artdmx(const artdmx_packet_t *dmx_packet, int len) {
     uint16_t length = ntohs(dmx_packet->length);
 
     if (length > DMX_LEN || len < sizeof(artdmx_packet_t) - (DMX_LEN - length)) {
-        ESP_LOGW(TAG, "Received malformed ArtDMX packet (len: %d)", len);
+        ESP_LOGD(TAG, "Received malformed ArtDMX packet (len: %d)", len);
         // Received malformed ArtDMX packet
         return;
     }

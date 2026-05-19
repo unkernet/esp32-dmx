@@ -166,8 +166,8 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepa
 
 static esp_err_t serve_static_file(httpd_req_t *req)
 {
-    char base_filepath[32]; // Path without /spiffs and without .gz
-    char full_filepath_gz[48]; // Full path including /spiffs and .gz
+    char base_filepath[32]; // Path without /data and without .gz
+    char full_filepath_gz[48]; // Full path including /data and .gz
     const char *uri = req->uri;
 
     // Determine the base file path (e.g., /index.html or /index.js)
@@ -178,7 +178,7 @@ static esp_err_t serve_static_file(httpd_req_t *req)
         base_filepath[sizeof(base_filepath) - 1] = '\0';
     }
 
-    snprintf(full_filepath_gz, sizeof(full_filepath_gz), "/spiffs%s.gz", base_filepath);
+    snprintf(full_filepath_gz, sizeof(full_filepath_gz), "/data%s.gz", base_filepath);
 
     struct stat st;
     if (get_file_info(full_filepath_gz, &st) != ESP_OK) {
@@ -331,8 +331,8 @@ static const httpd_uri_t get_task_list = {
 static void remove_ws_client(int fd)
 {
     xSemaphoreTake(ws_mutex, portMAX_DELAY);
-    ESP_LOGI(TAG, "Client disconnected: %d", fd);
     if (active_ws_client.active && active_ws_client.fd == fd) {
+        ESP_LOGD(TAG, "WS client disconnected");
         active_ws_client.active = false;
         active_ws_client.fd = -1;
         active_ws_client.handle = NULL;
@@ -344,7 +344,7 @@ static void remove_ws_client(int fd)
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "WS handshake done");
+        ESP_LOGD(TAG, "WS handshake done");
         xSemaphoreTake(ws_mutex, portMAX_DELAY);
         
         // If there's already a client, disconnect it first
@@ -495,7 +495,7 @@ static esp_err_t http_get_lua_script_handler(httpd_req_t *req) {
     }
 
     char filepath[48];
-    snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
+    snprintf(filepath, sizeof(filepath), "/user/%s", filename);
 
     struct stat st;
     if (stat(filepath, &st) != 0) {
@@ -536,7 +536,7 @@ static esp_err_t http_put_lua_script_handler(httpd_req_t *req) {
     }
 
     char filepath[48];
-    snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename);
+    snprintf(filepath, sizeof(filepath), "/user/%s", filename);
 
     if (req->content_len == 0) {
         ESP_LOGI(TAG, "Deleting file: %s", filepath);

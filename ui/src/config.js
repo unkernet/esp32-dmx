@@ -107,8 +107,6 @@ export function parseConfig(buffer) {
     p.repeat_time_endless = p.repeat_time == 0xff;
   });
 
-  console.log(['parseConfig', obj]);
-
   return obj;
 }
 

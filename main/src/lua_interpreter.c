@@ -78,9 +78,14 @@ static int l_dmx_send(lua_State *L) {
 
 static int l_print(lua_State *L) {
     size_t str_len;
-    const char *str = lua_tolstring(L, 1, &str_len);
-    ESP_LOGW(TAG, "%s", str);
+    const char *str = luaL_tolstring(L, 1, &str_len);
+    ESP_LOGI(TAG, "%s", str);
+    lua_pop(L, 1);
     return 0;
+}
+
+static void l_warn(void *ud, const char *msg, int tocont) {
+    ESP_LOGW(TAG, "%s", msg);
 }
 
 static const char *KILLED_SENTINEL = "KILLED";
@@ -215,9 +220,6 @@ static void lua_task(void *pvParameters) {
     // Remove prohibited libraries and functions
     lua_pushnil(L);
     lua_setglobal(L, "io");
-    lua_pushnil(L);
-    lua_setglobal(L, "warn");
-
     lua_getglobal(L, "os");
     if (lua_istable(L, -1)) {
         const char *restricted[] = {"execute", "getenv", "remove", "rename", "tmpname", "exit", "setlocale", NULL};
@@ -229,7 +231,7 @@ static void lua_task(void *pvParameters) {
     lua_pop(L, 1); // pop os
     lua_getglobal(L, "package");
     if (lua_istable(L, -1)) {
-        lua_pushliteral(L, "/spiffs/?.luac;/spiffs/?.lua;/spiffs/?/init.luac;/spiffs/?/init.lua");
+        lua_pushliteral(L, "/user/?.luac;/user/?.lua;/user/?/init.luac;/user/?/init.lua");
         lua_setfield(L, -2, "path");
     }
     lua_pop(L, 1); // pop package
@@ -248,6 +250,7 @@ static void lua_task(void *pvParameters) {
     lua_register(L, "random", l_random);
     lua_register(L, "sleep", l_sleep);
     lua_register(L, "print", l_print);
+    lua_setwarnf(L, l_warn, NULL);
 
     int status;
     if (ctx->req) {
@@ -255,7 +258,7 @@ static void lua_task(void *pvParameters) {
         status = lua_load(L, lua_stream_reader, ctx, "stream", NULL);
     } else {
         char full_path[80];
-        snprintf(full_path, sizeof(full_path), "/spiffs/%s", ctx->filename);
+        snprintf(full_path, sizeof(full_path), "/user/%s", ctx->filename);
         ESP_LOGI(TAG, "Loading script from file: %s", ctx->filename);
         status = luaL_loadfile(L, full_path);
     }
@@ -268,7 +271,7 @@ static void lua_task(void *pvParameters) {
         ctx->result = ESP_OK;
         xSemaphoreGive(ctx->load_sem);
     } else {
-        strncpy(S->current_script, ctx->filename ? ctx->filename : "|", C_SCRIPT_LEN - 1);
+        strncpy(S->current_script, ctx->filename ? ctx->filename : "---", C_SCRIPT_LEN - 1);
         S->should_stop = false;
         S->last_error[0] = '\0';
         S->listen_universe = EMPTY;
@@ -306,7 +309,7 @@ esp_err_t lua_interpreter_init(void) {
     RETURN_ON_ERROR(ensure_lua_state());
 
     struct stat st;
-    if (stat("/spiffs/init.lua", &st) == 0) {
+    if (stat("/user/init.lua", &st) == 0) {
         return lua_interpreter_run("init.lua");
     }
     return ESP_OK;
@@ -405,7 +408,7 @@ bool lua_interpreter_is_running(void) {
 }
 
 esp_err_t lua_interpreter_list_scripts(httpd_req_t *req) {
-    DIR *dir = opendir("/spiffs");
+    DIR *dir = opendir("/user");
     if (dir == NULL) {
         httpd_resp_sendstr(req, "{\"scripts\":[],\"running\":null,\"error\":null}");
         return ESP_OK;

@@ -317,7 +317,7 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
         .show_hidden = true,
     };
 
-    ESP_LOGI(TAG, "Starting WiFi scan...");
+    ESP_LOGD(TAG, "Starting WiFi scan...");
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start scan: %s", esp_err_to_name(err));
@@ -328,7 +328,7 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
 
     esp_wifi_scan_get_ap_num(&ap_count);
     esp_wifi_scan_get_ap_records(&number, ap_info);
-    ESP_LOGI(TAG, "Found %d networks", ap_count);
+    ESP_LOGD(TAG, "Found %d networks", ap_count);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send_chunk(req, "[", 1);
