@@ -53,6 +53,32 @@ The gateway features an integrated **Lua 5.5** interpreter, allowing for complex
 *   **Routing:** Scripts can read data from any DMX universe and output to any other universe (physical or virtual).
 *   **Examples:** Check the `/lua` folder for templates involving **channel merging**, **value scaling**, and **HSV-to-RGB conversion**.
 
+## Building the Project
+
+The project can be built using either the **ESP-IDF** (recommended) or **PlatformIO IDE**.
+
+### Prerequisites
+*   **Firmware:** [ESP-IDF v5.5+](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html) or [PlatformIO](https://platformio.org/).
+*   **Web UI Assets:** [Node.js v22+](https://nodejs.org/) is required to compile the frontend assets.
+
+### Build Instructions
+**Firmware & UI:** The Web UI assets are built and upload **automatically** during the firmware compilation and flash stages.
+
+*   **ESP-IDF:** Run `idf.py flash`.
+*   **PlatformIO:** Use the Upload button or run `pio run -t upload`.
+
+---
+
+## Customizing the Firmware
+
+The gateway is highly modular. You can easily enable or disable features to fit your specific hardware or memory requirements in two ways:
+
+1.  **Direct Modification:** Modify the `#define` directives in `main/include/hardware_config.h`.
+2.  **Hardware Profiles:** Create custom hardware profile files (e.g., `hardware_config.mini.h`) and switch between them using **`menuconfig`**. See **`main/Kconfig.projbuild`** for examples of how to define and switch these profiles.
+
+*   **Memory Efficiency:** Disabling unused modules (e.g., the Lua interpreter or BLE) at build time significantly reduces Flash and RAM usage.
+*   **Dynamic UI:** The Web UI automatically adapts to your build. If a module is disabled in the firmware, its corresponding configuration tabs and options will not appear in the dashboard.
+
 ---
 
 ## Ambitful BLE Channel Structure
@@ -84,7 +110,7 @@ This project utilizes a **patched version of the ESP-IDF UART driver**. This mod
 
 ## Recommended Hardware Configuration
 
-To build a reliable gateway, the following hardware setup is recommended:
+To build a reliable gateway, the following hardware setup is recommended. For a complete example of a build, see **[Reference hardware description](docs/REFERENCE_DEVICE.md)**.
 
 ### DMX Interface (RS485)
 *   **Duplex Port Mode:** Use **two RS485 transceivers** per channel (one for RX, one for TX) for true simultaneous full-duplex operation.
