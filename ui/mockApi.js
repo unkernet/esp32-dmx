@@ -90,6 +90,8 @@ export const mockApi = {
   name: 'mock-api',
   configureServer(server) {
 
+    const tempScriptName = '---';
+
     server.middlewares.use((req, res, next) => {
 
       if (req.url === '/config') {
@@ -156,13 +158,13 @@ export const mockApi = {
       }
 
       if (req.url.startsWith('/lua/run/') && req.method === 'POST') {
-        runningScript = req.url.substr('/lua/run/'.length) || '|';
+        runningScript = req.url.substr('/lua/run/'.length) || tempScriptName;
         lastError = null;
         if (runningScript === 'error.lua') {
             lastError = 'Error: Mock runtime error';
             runningScript = null;
         }
-        if (runningScript === '|') {
+        if (runningScript === tempScriptName) {
           let data = '';
           req.on('data', chunk => { data += chunk; });
           req.on('end', () => {

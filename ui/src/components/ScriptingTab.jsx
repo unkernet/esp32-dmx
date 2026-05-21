@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import { API } from "../api";
 import { Card, Modal } from "./Common";
 import { Play as PlayBtn, FileText, Trash2, StopCircle, RefreshCcw, Upload, HelpCircle, Plus, Save } from "lucide-preact";
-// import { ccs } from '../util';
+import { ScriptEditor } from "./ScriptEditor";
 
 const tempScriptName = '---';
 let unsavedScript = "";
@@ -20,7 +20,6 @@ export function ScriptingTab() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [scriptToDelete, setScriptToDelete] = useState(null);
   const fileInputRef = useRef(null);
-  const editorRef = useRef(null);
 
   const fetchScripts = async () => {
     try {
@@ -102,9 +101,14 @@ export function ScriptingTab() {
 
   const handleViewScript = async (fileName) => {
     try {
-      const content = await API.getScriptContent(fileName);
-      setCurrentScriptContent(content);
-      setCurrentScriptFileName(fileName);
+      if (fileName === tempScriptName) {
+        setCurrentScriptContent(unsavedScript);
+        setCurrentScriptFileName("");
+      } else {
+        const content = await API.getScriptContent(fileName);
+        setCurrentScriptContent(content);
+        setCurrentScriptFileName(fileName);
+      }
       setHideError(true);
       setShowContentModal(true);
     } catch (e) {
@@ -113,7 +117,7 @@ export function ScriptingTab() {
   };
 
   const handleNewScript = () => {
-    setCurrentScriptContent(unsavedScript);
+    setCurrentScriptContent("");
     setCurrentScriptFileName("");
     setShowContentModal(true);
   };
@@ -140,36 +144,13 @@ export function ScriptingTab() {
       setLoading(true);
       setScriptError(null);
       setHideError(false);
-      if (!currentScriptFileName) {
-        unsavedScript = currentScriptContent;
-      }
+      unsavedScript = currentScriptContent;
       await API.runStream(currentScriptContent);
       setTimeout(fetchScripts, 500);
     } catch (e) {
       alert("Failed to run script: " + e.message);
     }
     setLoading(false);
-  };
-
-  const handleEditorKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const { selectionStart, selectionEnd, value } = e.target;
-      const before = value.substring(0, selectionStart);
-      const after = value.substring(selectionEnd);
-      const line = before.split('\n').pop();
-      const spaces = line.match(/^\s*/)[0];
-      
-      const newValue = before + '\n' + spaces + after;
-      setCurrentScriptContent(newValue);
-      
-      const newPos = selectionStart + 1 + spaces.length;
-      setTimeout(() => {
-        if (editorRef.current) {
-          editorRef.current.selectionStart = editorRef.current.selectionEnd = newPos;
-        }
-      }, 0);
-    }
   };
 
   const handleDeleteScript = async (fileName) => {
@@ -251,7 +232,7 @@ export function ScriptingTab() {
                       <PlayBtn size={20} />
                     </button>
                   )}
-                  <button class="outline" disabled={temp || luac} onClick={() => handleViewScript(script)} title="View Script">
+                  <button class="outline" disabled={luac} onClick={() => handleViewScript(script)} title="View Script">
                     <FileText size={20} />
                   </button>
                   <button class="outline" disabled={temp}  onClick={() => handleDeleteScript(script)} title="Delete Script">
@@ -287,13 +268,9 @@ export function ScriptingTab() {
           value={currentScriptFileName}
           onInput={(e) => setCurrentScriptFileName(e.target.value)}
         />
-        <textarea 
-          ref={editorRef}
-          class="script-src"
+        <ScriptEditor 
           value={currentScriptContent}
           onInput={(e) => setCurrentScriptContent(e.target.value)}
-          onKeyDown={handleEditorKeyDown}
-          spellcheck={false}
           rows={15}
         />
       </Modal>
@@ -338,7 +315,7 @@ export function ScriptingTab() {
               Generate a true random integer between <code>min</code> and <code>max</code> (inclusive). If no arguments, returns a full 32-bit integer.
             </li>
             <li>
-              <code>print(string)</code><br/>
+              <code>print(string)</code> or <code>warn(string)</code><br/>
               Print a message to the system log for debugging.
             </li>
           </ul>
