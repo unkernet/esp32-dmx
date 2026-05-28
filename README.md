@@ -125,6 +125,15 @@ To build a reliable gateway, the following hardware setup is recommended. For a 
 
 ---
 
+## UI Screenshots ##
+
+![Art-Net tab](https://github.com/user-attachments/assets/9f4d14f3-f38e-42e1-9ddf-70aff42e16c7) 
+![DMX tab](https://github.com/user-attachments/assets/8f9b5754-de53-4f03-a867-d7e5b91eeea5) 
+![Scripting tab](https://github.com/user-attachments/assets/50579e66-c6e1-437c-b164-4c02b0e79180) 
+![Monitor tab](https://github.com/user-attachments/assets/7792d706-e406-450a-91d9-aaf3ac3e8525) 
+
+---
+
 ## License
 
 This project is licensed under the **ISC License**.
