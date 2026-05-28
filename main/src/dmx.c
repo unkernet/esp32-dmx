@@ -34,7 +34,7 @@ typedef struct {
     const char *instance_name;
     TaskHandle_t tx_task;
     dmx_frame_t dmx_tx_buf;
-    SemaphoreHandle_t tx_sem;
+    SemaphoreHandle_t tx_mutex;
     QueueHandle_t uart_evt_queue;
     int8_t en_pin;
 } dmx_port_t;
@@ -152,11 +152,11 @@ static void dmx_tx_task(void *arg)
 
         if (notified > 0) {
             // Notified: new data is ready in dmx_tx_buf
-            if (xSemaphoreTake(port->tx_sem, portMAX_DELAY) == pdTRUE) {
+            if (xSemaphoreTake(port->tx_mutex, portMAX_DELAY) == pdTRUE) {
                 frame.len = port->dmx_tx_buf.len + 1;
                 frame.data[0] = 0; // Start byte
                 memcpy(frame.data + 1, port->dmx_tx_buf.data, port->dmx_tx_buf.len);
-                xSemaphoreGive(port->tx_sem);
+                xSemaphoreGive(port->tx_mutex);
                 active = true;
                 if (port->repeat_time != REPEAT_TIME_ENDLESS) {
                     end_time_us = esp_timer_get_time() + (int64_t)port->repeat_time * 1000000;
@@ -227,8 +227,7 @@ static esp_err_t dmx_init_port(const dmx_port_settings_t *settings, int8_t uart_
     RETURN_ON_ERROR(uart_param_config(port->uart_num, &uart_cfg));
     RETURN_ON_ERROR(uart_set_pin(port->uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     
-    RETURN_ON_NULL(port->tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
-    xSemaphoreGive(port->tx_sem);
+    RETURN_ON_NULL(port->tx_mutex = xSemaphoreCreateMutex(), ESP_ERR_NO_MEM);
 
     if ((enabled_mask & (MOD_EN_DMX_0_IN | MOD_EN_DMX_1_IN | MOD_EN_DMX_2_IN | MOD_EN_DMX_3_IN)) && rx_pin >= 0) {
         TaskHandle_t dmx_rx_task_handle;
@@ -262,10 +261,10 @@ void dmx_send(uint16_t universe, const uint8_t *data, uint16_t length)
     for (int i = 0; i < UART_NUM_MAX; i++) {
         dmx_port_t *port = registered_ports[i];
         if (port && (port->enabled_mask & (MOD_EN_DMX_0_OUT | MOD_EN_DMX_1_OUT | MOD_EN_DMX_2_OUT | MOD_EN_DMX_3_OUT)) && port->out_universe == universe) {
-            if (xSemaphoreTake(port->tx_sem, 0) == pdTRUE) {
+            if (xSemaphoreTake(port->tx_mutex, 0) == pdTRUE) {
                 port->dmx_tx_buf.len = length;
                 memcpy(port->dmx_tx_buf.data, data, length);
-                xSemaphoreGive(port->tx_sem);
+                xSemaphoreGive(port->tx_mutex);
                 xTaskNotifyGive(port->tx_task);
             }
         }

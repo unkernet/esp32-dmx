@@ -29,7 +29,7 @@ typedef struct {
     char last_error[ERROR_LEN];
     
     // DMX Data exchange
-    SemaphoreHandle_t dmx_data_sem;
+    SemaphoreHandle_t dmx_data_mutex;
     uint8_t dmx_buffer[DMX_LEN];
     uint16_t dmx_buffer_len;
     uint16_t listen_universe;
@@ -107,11 +107,11 @@ void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
         return;
     }
 
-    if (xSemaphoreTake(S->dmx_data_sem, 0) == pdTRUE) {
+    if (xSemaphoreTake(S->dmx_data_mutex, 0) == pdTRUE) {
         S->dmx_buffer_len = (length > DMX_LEN) ? DMX_LEN : length;
         memcpy(S->dmx_buffer, data, S->dmx_buffer_len);
         S->buffered_universe = universe;
-        xSemaphoreGive(S->dmx_data_sem);
+        xSemaphoreGive(S->dmx_data_mutex);
         xTaskNotifyGiveIndexed(task, DATA_NOTIFY);
     }
 }
@@ -129,14 +129,14 @@ static int l_dmx_read(lua_State *L) {
 
     if (ulTaskNotifyTakeIndexed(DATA_NOTIFY, pdTRUE, pdMS_TO_TICKS(timeout)) > 0) {
         lua_kill_hook(L, NULL);
-        if (xSemaphoreTake(S->dmx_data_sem, portMAX_DELAY) == pdTRUE) {
+        if (xSemaphoreTake(S->dmx_data_mutex, portMAX_DELAY) == pdTRUE) {
             if (S->buffered_universe == (uint16_t)universe) {
                 lua_pushlstring(L, (const char *)S->dmx_buffer, S->dmx_buffer_len);
                 S->buffered_universe = EMPTY; // Mark data as consumed
-                xSemaphoreGive(S->dmx_data_sem);
+                xSemaphoreGive(S->dmx_data_mutex);
                 return 1;
             }
-            xSemaphoreGive(S->dmx_data_sem);
+            xSemaphoreGive(S->dmx_data_mutex);
         }
     }
 
@@ -175,12 +175,11 @@ static esp_err_t ensure_lua_state() {
         S = calloc(1, sizeof(lua_interpreter_state_t));
         RETURN_ON_NULL(S, ESP_ERR_NO_MEM);
         
-        if(unlikely(!(S->dmx_data_sem = xSemaphoreCreateBinary()))) {
+        if(unlikely(!(S->dmx_data_mutex = xSemaphoreCreateMutex()))) {
             free(S);
             S = NULL;
             return ESP_ERR_NO_MEM;
         }
-        xSemaphoreGive(S->dmx_data_sem);
         
         S->listen_universe = EMPTY;
         S->buffered_universe = EMPTY;
