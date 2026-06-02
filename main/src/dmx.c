@@ -190,12 +190,12 @@ static void dmx_tx_task(void *arg)
 
 static esp_err_t dmx_init_port(const dmx_port_settings_t *settings, int8_t uart_num, int8_t tx_pin, int8_t rx_pin, int8_t en_pin, dmx_data_source_t source, uint32_t enabled_mask, const char *instance_name)
 {
-    if (tx_pin < 0 && rx_pin < 0) return ESP_OK;
-
     if (en_pin >= 0) {
         gpio_set_direction(en_pin, GPIO_MODE_OUTPUT);
         gpio_set_level(en_pin, 0);
     }
+
+    if (tx_pin < 0 && rx_pin < 0) return ESP_OK;
 
     if (uart_num < 0 || uart_num >= UART_NUM_MAX) {
         return ESP_ERR_INVALID_ARG;
@@ -244,7 +244,10 @@ static esp_err_t dmx_init_port(const dmx_port_settings_t *settings, int8_t uart_
         ESP_LOGI(instance_name, "tx disabled");
     }
 
-    if (en_pin >= 0) {
+    if (en_pin >= 0 && (enabled_mask & (
+        MOD_EN_DMX_0_IN | MOD_EN_DMX_1_IN | MOD_EN_DMX_2_IN | MOD_EN_DMX_3_IN |
+        MOD_EN_DMX_0_OUT | MOD_EN_DMX_1_OUT | MOD_EN_DMX_2_OUT | MOD_EN_DMX_3_OUT
+    ))) {
         gpio_set_level(en_pin, 1);
     }
 
