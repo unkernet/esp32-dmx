@@ -344,9 +344,8 @@ static void remove_ws_client(int fd)
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
-        ESP_LOGD(TAG, "WS handshake done");
         xSemaphoreTake(ws_mutex, portMAX_DELAY);
-        
+
         // If there's already a client, disconnect it first
         if (active_ws_client.active) {
             httpd_sess_trigger_close(active_ws_client.handle, active_ws_client.fd);
@@ -355,7 +354,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
         active_ws_client.fd = httpd_req_to_sockfd(req);
         active_ws_client.handle = req->handle;
         active_ws_client.active = true;
-        
+
         xSemaphoreGive(ws_mutex);
         return ESP_OK;
     }
@@ -437,7 +436,8 @@ static const httpd_uri_t ws_uri = {
     .method     = HTTP_GET,
     .handler    = ws_handler,
     .user_ctx   = NULL,
-    .is_websocket = true
+    .is_websocket = true,
+    .ws_post_handshake_cb = ws_handler,
 };
 
 static esp_err_t http_get_wifi_scan_handler(httpd_req_t *req) {
