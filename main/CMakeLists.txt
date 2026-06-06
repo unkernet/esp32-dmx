@@ -2,7 +2,7 @@
 FILE(GLOB SRCS "src/*.c")
 idf_component_register(SRCS ${SRCS}
     INCLUDE_DIRS "include" "src"
-    REQUIRES driver esp_timer mdns bt esp_http_server nvs_flash esp_wifi spiffs esp_event lwip lua
+    REQUIRES driver esp_driver_uart esp_driver_gpio esp_driver_rmt esp_pm esp_timer mdns bt esp_http_server nvs_flash esp_wifi spiffs esp_event lwip lua
 )
 
 # Build UI
