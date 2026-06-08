@@ -16,7 +16,7 @@ export function WifiTab() {
   const handleScan = async () => {
     setScanning(true);
     try {
-      const results = await API.scanWifi();
+      const results = (await API.scanWifi()).filter(net => net.ssid);
       results.sort((a, b) => b.rssi - a.rssi);
       setScanResults(results);
       setIsManual(false);
@@ -46,8 +46,9 @@ export function WifiTab() {
               />
             ) : (
               <select onInput={(e) => updateConfig('wifi.sta.ssid', e.target.value)} value={configValue.wifi.sta.ssid}>
+                <option disabled value="">Select network</option>
                 {scanResults.map(net => (
-                  <option value={net.ssid}>{net.ssid} ({net.rssi}dBm)</option>
+                  <option value={net.ssid}>{net.ssid} {net.authmode ? '' : '🔓'} ({net.rssi}dBm)</option>
                 ))}
               </select>
             )}
@@ -61,7 +62,7 @@ export function WifiTab() {
           </div>
         </FormField>
 
-        <FormField label="Password" description="WiFi password.">
+        <FormField label="Password">
           <input 
             type="text" 
             placeholder="Network password"
@@ -98,7 +99,7 @@ export function WifiTab() {
             onInput={(e) => updateConfig('wifi.ap.ssid', e.target.value)}
           />
         </FormField>
-        <FormField label="AP Password" description="Min 8 characters.">
+        <FormField label="AP Password">
           <input 
             type="text" 
             value={configValue.wifi.ap.password}

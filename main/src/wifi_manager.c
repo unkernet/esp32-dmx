@@ -24,6 +24,14 @@
 
 static const char *TAG = "wifi_mgr";
 
+typedef struct __attribute__((packed)) {
+    uint8_t bssid[6];
+    uint8_t ssid[33];
+    uint8_t channel;
+    int8_t  rssi;
+    uint8_t authmode;
+} ap_info_t;
+
 /* ---------- state ---------- */
 
 wifi_state_t wifi_state;
@@ -303,12 +311,14 @@ static void reconnect_task(void *arg)
 
 esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     uint16_t number = 20;
-    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * number);
+    uint16_t ap_count = 20;
+    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * ap_count);
+    ap_info_t ap_info_out;
+
     if (ap_info == NULL) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
         return ESP_FAIL;
     }
-    uint16_t ap_count = 0;
 
     wifi_scan_config_t scan_config = {
         .ssid = 0,
@@ -330,17 +340,15 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     esp_wifi_scan_get_ap_records(&number, ap_info);
     ESP_LOGD(TAG, "Found %d networks", ap_count);
 
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send_chunk(req, "[", 1);
+    httpd_resp_set_type(req, "application/octet-stream");
     for (int i = 0; i < ap_count; i++) {
-        char buf[128];
-        uint8_t *bssid = ap_info[i].bssid;
-        int len = snprintf(buf, sizeof(buf), "%s{\"ssid\":\"%s\",\"rssi\":%d,\"auth\":%d,\"bssid\":\"%02x:%02x:%02x:%02x:%02x:%02x\"}",
-                           i == 0 ? "" : ",", (char *)ap_info[i].ssid, ap_info[i].rssi, ap_info[i].authmode,
-                           bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
-        httpd_resp_send_chunk(req, buf, len);
+        memcpy(ap_info_out.bssid, ap_info[i].bssid, sizeof(ap_info_out.bssid));
+        memcpy(ap_info_out.ssid, ap_info[i].ssid, sizeof(ap_info_out.ssid));
+        ap_info_out.channel = ap_info[i].primary;
+        ap_info_out.rssi = ap_info[i].rssi;
+        ap_info_out.authmode = ap_info[i].authmode;
+        httpd_resp_send_chunk(req, (void*)&ap_info_out, sizeof(ap_info_out));
     }
-    httpd_resp_send_chunk(req, "]", 1);
     httpd_resp_send_chunk(req, NULL, 0);
 
     free(ap_info);

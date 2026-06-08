@@ -1,4 +1,4 @@
-import { decodeStruct, encodeStruct, sizeofStruct } from './struct';
+import { decodeStruct, encodeStruct, sizeofStruct } from './struct.js';
 
 const enabledModules = [
   'dmx_0_in', 'dmx_0_out',
@@ -59,6 +59,22 @@ const metaSchema = [
   ['dev_name', 's5'],
   ['dmx_name', [4, 's16']],
 ];
+
+const apRecord = [
+  -1, [
+    ['bssid', 's6'],
+    ['ssid', 's33'],
+    ['channel', 'u8'],
+    ['rssi', 'i8'],
+    ['authmode', 'u8'],
+  ]
+];
+
+const scriptList = [
+  ['running', 's64'],
+  ['error', 's128'],
+  ['files', [-1, 's48']],
+]
 
 // IP Helpers
 function uint32ToIp(uint32) {
@@ -128,6 +144,21 @@ export function serializeConfig(conf) {
     return encodeStruct(data, schema);
 }
 
-export function serializeMeta(info) { // For mock only
+export function parseApRecords(data) {
+  return decodeStruct(data, apRecord);
+}
+
+export function parseScriptList(data) {
+  return decodeStruct(data, scriptList);
+}
+
+/* For mock only */
+export function serializeMeta(info) { 
   return encodeStruct(info, metaSchema);
+}
+export function serializeAp(data) { 
+  return encodeStruct(data, apRecord);
+}
+export function serializeScriptList(data) {
+  return encodeStruct(data, scriptList);
 }

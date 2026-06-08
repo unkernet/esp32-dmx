@@ -1,4 +1,6 @@
-import { parseConfig, serializeConfig } from './config';
+import { parseConfig, serializeConfig, parseApRecords } from './config';
+
+const octetStream = 'application/octet-stream';
 
 export const API = {
   async getConfig() {
@@ -13,9 +15,7 @@ export const API = {
 
     const res = await fetch('/config', {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/octet-stream'
-      },
+      headers: { 'content-type': octetStream },
       body: buffer
     });
     if (!res.ok) throw new Error('Failed to save config');
@@ -72,9 +72,9 @@ export const API = {
   },
 
   async scanWifi() {
-    const res = await fetch('/wifi/scan');
+    const res = await fetch('/wifi/scan', { headers: { accept: octetStream }});
     if (!res.ok) throw new Error('WiFi scan failed');
-    return await res.json();
+    return parseApRecords(await res.arrayBuffer());
   },
 
   reboot() {

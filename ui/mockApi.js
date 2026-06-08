@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { WebSocketServer } from 'ws';
-import { serializeConfig, serializeMeta } from './src/config.js';
+import { serializeConfig, serializeMeta, serializeAp } from './src/config.js';
 
 const wss = new WebSocketServer({ noServer: true });
 const luaScripts = new Map();
@@ -206,12 +206,12 @@ export const mockApi = {
       }
 
       if (req.url === '/wifi/scan') {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify([
-          { ssid: 'Mock-WiFi-1', rssi: -50, bssid: '00:11:22:33:44:55', channel: 1, secure: 3 },
-          { ssid: 'Mock-WiFi-3', rssi: -90, bssid: '66:77:88:99:AA:BB', channel: 2, secure: 3 },
-          { ssid: 'Mock-WiFi-2', rssi: -70, bssid: '66:77:88:99:AA:BB', channel: 6, secure: 0 },
-        ]));
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.end(new Uint8Array(serializeAp([
+          { ssid: 'Mock-WiFi-1', rssi: -50, channel: 1, authmode: 3 },
+          { ssid: 'Mock-WiFi-3', rssi: -90, channel: 2, authmode: 3 },
+          { ssid: 'Mock-WiFi-2', rssi: -70, channel: 6, authmode: 0 },
+        ])));
         return;
       }
       next();
