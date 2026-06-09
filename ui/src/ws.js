@@ -91,8 +91,7 @@ export const WS = {
       }
     }, SEND_INTERVAL);
 
-    // Find the last non-zero index, but at least 16
-    let lastNonZero = Math.max(15, index);
+    let lastNonZero = index;
     for (let i = 511; i > lastNonZero; i--) {
       if (data[i] > 0) {
         lastNonZero = i;
@@ -100,7 +99,7 @@ export const WS = {
       }
     }
 
-    const len = lastNonZero + 1;
+    const len = Math.min(512, lastNonZero + 32);
     const packet = new Uint8Array(2 + len);
     packet[0] = universe & 0xff;
     packet[1] = (universe >> 8) & 0xff;

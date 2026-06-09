@@ -295,7 +295,11 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
         return;
     }
 
-    if (++sequence == 0) sequence = 1;
+    // Art-Net treats sequence==0 as "sequencing disabled", so skip it.
+    uint8_t seq;
+    do {
+        seq = __atomic_add_fetch(&sequence, 1, __ATOMIC_RELAXED);
+    } while (seq == 0);
     if (length > DMX_LEN) length = DMX_LEN;
 
     artdmx_packet_t *pkt = (artdmx_packet_t *)tx_packet.buffer;
@@ -303,13 +307,13 @@ void send_artnet_dmx_data(uint16_t universe, const uint8_t * data, uint16_t leng
     memcpy(pkt->header.id, ARTNET_ID, ARTNET_ID_LENGTH);
     pkt->header.opcode = ARTNET_OP_DMX;
     pkt->header.prot_ver = htons(14);
-    pkt->sequence = sequence;
+    pkt->sequence = seq;
     pkt->physical = 0;
     pkt->universe = universe;
     pkt->length = htons(length);
     memcpy(pkt->data, data, length);
 
-    tx_packet.len = sizeof(artdmx_packet_t) - (512 - length);
+    tx_packet.len = sizeof(artdmx_packet_t) - (DMX_LEN - length);
     tx_packet.addr.sin_family = AF_INET;
     tx_packet.addr.sin_port = htons(ARTNET_PORT);
     tx_packet.addr.sin_addr.s_addr = g_broadcast_addr;

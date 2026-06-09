@@ -13,8 +13,9 @@
 #include "dmx.h"
 #include "router.h"
 
-#define DMX_BREAK_BITS    23 // 23 * 4 us = 92 us
-#define MIN_DMX_LEN       16
+#define DMX_BREAK_BITS    44
+#define DMX_MAB_BITS      6
+#define MIN_DMX_LEN       32
 #define DMX_BUF_SIZE      (DMX_LEN + 2)
 #define REPEAT_TIME_ENDLESS (0xff)
 
@@ -141,7 +142,7 @@ static void dmx_rx_task(void *arg)
 static void dmx_tx_task(void *arg)
 {
     dmx_port_t *port = (dmx_port_t*) arg;
-    TickType_t max_frame_interval = pdMS_TO_TICKS(MAX(1, port->repeat_interval) - 1);
+    TickType_t max_frame_interval = MAX(1, pdMS_TO_TICKS(MAX(1, port->repeat_interval) - 1));
     // If there was no new data for a `repeat_time` second, last packet retransmission will stop
     int64_t end_time_us = 0;
     bool active = false;
@@ -174,7 +175,7 @@ static void dmx_tx_task(void *arg)
                 uart_set_line_inverse(port->uart_num, UART_SIGNAL_TXD_INV);
                 esp_rom_delay_us(DMX_BREAK_BITS * 4);
                 uart_set_line_inverse(port->uart_num, UART_SIGNAL_INV_DISABLE);
-                esp_rom_delay_us(8);
+                esp_rom_delay_us(DMX_MAB_BITS * 4);
                 uart_write_bytes(port->uart_num, frame.data, frame.len);
                 uart_wait_tx_done(port->uart_num, portMAX_DELAY);
             #endif

@@ -10,7 +10,7 @@
 #include "freertos/task.h"
 #include "modules.h"
 
-static const char *TAG = "AMBUTFUL";
+static const char *TAG = "AMBITFUL";
 
 #define MAX_AMBITFUL_GROUPS (8)
 #define AMBITFUL_SIZE (8)

@@ -102,17 +102,15 @@ void send_lua_data(uint16_t universe, const uint8_t *data, uint16_t length) {
         return;
     }
 
-    TaskHandle_t task = S->task_handle;
-    if (task == NULL) {
-        return;
-    }
-
     if (xSemaphoreTake(S->dmx_data_mutex, 0) == pdTRUE) {
-        S->dmx_buffer_len = (length > DMX_LEN) ? DMX_LEN : length;
-        memcpy(S->dmx_buffer, data, S->dmx_buffer_len);
-        S->buffered_universe = universe;
+        TaskHandle_t task = S->task_handle;
+        if (task != NULL) {
+            S->dmx_buffer_len = (length > DMX_LEN) ? DMX_LEN : length;
+            memcpy(S->dmx_buffer, data, S->dmx_buffer_len);
+            S->buffered_universe = universe;
+            xTaskNotifyGiveIndexed(task, DATA_NOTIFY);
+        }
         xSemaphoreGive(S->dmx_data_mutex);
-        xTaskNotifyGiveIndexed(task, DATA_NOTIFY);
     }
 }
 
@@ -206,6 +204,7 @@ static void lua_task(void *pvParameters) {
     if (L == NULL) {
         ESP_LOGE(TAG, "Failed to create Lua state");
         strncpy(S->last_error, "Failed to create Lua state", ERROR_LEN - 1);
+        S->last_error[ERROR_LEN - 1] = '\0';
         ctx->result = ESP_ERR_NO_MEM;
         xSemaphoreGive(ctx->load_sem);
         S->task_handle = NULL;
@@ -271,6 +270,7 @@ static void lua_task(void *pvParameters) {
         xSemaphoreGive(ctx->load_sem);
     } else {
         strncpy(S->current_script, ctx->filename ? ctx->filename : "---", C_SCRIPT_LEN - 1);
+        S->current_script[C_SCRIPT_LEN - 1] = '\0';
         S->should_stop = false;
         S->last_error[0] = '\0';
         S->listen_universe = EMPTY;
@@ -297,10 +297,12 @@ static void lua_task(void *pvParameters) {
     }
 
     lua_close(L);
+    xSemaphoreTake(S->dmx_data_mutex, portMAX_DELAY);
     S->L = NULL;
     S->task_handle = NULL;
     S->current_script[0] = '\0';
     S->listen_universe = EMPTY;
+    xSemaphoreGive(S->dmx_data_mutex);
     vTaskDelete(NULL);
 }
 
@@ -391,12 +393,15 @@ esp_err_t lua_interpreter_kill(void) {
 
     if (task_handle != NULL) {
         ESP_LOGW(TAG, "Script was forcibly killed");
+        xSemaphoreTake(S->dmx_data_mutex, portMAX_DELAY);
         strncpy(S->last_error, "Script was forcibly killed", ERROR_LEN - 1);
+        S->last_error[ERROR_LEN - 1] = '\0';
         vTaskDelete(task_handle);
         S->L = NULL;
         S->task_handle = NULL;
         S->current_script[0] = '\0';
         S->listen_universe = EMPTY;
+        xSemaphoreGive(S->dmx_data_mutex);
         return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;

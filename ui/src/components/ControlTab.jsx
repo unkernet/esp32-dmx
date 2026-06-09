@@ -31,6 +31,12 @@ export function ControlTab() {
     WS.sendDMX(universe, newData, channelIndex);
   };
 
+  const handleWheel = (channelIndex, event) => {
+    event.preventDefault();
+    const value = Math.min(255, Math.max(0, controlData[channelIndex] + event.deltaY));
+    handleSliderChange(channelIndex, value);
+  }
+
   return (
     <Card title="DMX Control" btn={<WsConnectBtn />}>
       <FormField label="Universe">
@@ -54,6 +60,7 @@ export function ControlTab() {
                 min="0" max="255" 
                 value={controlData[channel]} 
                 onInput={(e) => handleSliderChange(channel, e.target.value)}
+                onWheel={(e) => handleWheel(channel, e)}
               />
               <span >
                 {channel + 1}

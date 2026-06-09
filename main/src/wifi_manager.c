@@ -135,10 +135,8 @@ static void ap_timeout_cb(TimerHandle_t t)
 {
     ESP_LOGI(TAG, "AP timeout");
     led_off();
-    BaseType_t hp = pdFALSE;
     wifi_state = WIFI_STATE_WAIT_RECONNECT;
-    xEventGroupSetBitsFromISR(wifi_event_group, EVT_RECONNECT_NOW, &hp);
-    portYIELD_FROM_ISR(hp);
+    xEventGroupSetBits(wifi_event_group, EVT_RECONNECT_NOW);
 }
 
 /* ---------- event handler ---------- */
@@ -200,10 +198,14 @@ static bool wifi_start_sta(void)
         esp_netif_ip_info_t ip_info;
         ip_info.ip.addr = cfg->wifi.sta.ip;
         ip_info.gw.addr = 0;
-        if (cfg->wifi.sta.netmask_len <= 32) {
-            ip_info.netmask.addr = htonl(~((1U << (32 - cfg->wifi.sta.netmask_len)) - 1));
+        uint8_t n = cfg->wifi.sta.netmask_len;
+        // Shift by 32 on a 32-bit value is UB, and n==0 would do exactly that.
+        if (n == 0) {
+            ip_info.netmask.addr = 0;
+        } else if (n >= 32) {
+            ip_info.netmask.addr = 0xFFFFFFFFU;
         } else {
-            ip_info.netmask.addr = htonl(0xFFFFFF00);
+            ip_info.netmask.addr = htonl(~((1U << (32 - n)) - 1));
         }
         
         esp_netif_set_ip_info(sta_netif, &ip_info);
@@ -309,10 +311,12 @@ static void reconnect_task(void *arg)
 
 /* ---------- init ---------- */
 
+#define WIFI_SCAN_MAX_RECORDS 20
+
 esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
-    uint16_t number = 20;
-    uint16_t ap_count = 20;
-    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * ap_count);
+    uint16_t number = WIFI_SCAN_MAX_RECORDS;
+    uint16_t ap_count = 0;
+    wifi_ap_record_t *ap_info = malloc(sizeof(wifi_ap_record_t) * WIFI_SCAN_MAX_RECORDS);
     ap_info_t ap_info_out;
 
     if (ap_info == NULL) {
@@ -339,6 +343,11 @@ esp_err_t wifi_manager_scan_wifi(httpd_req_t *req) {
     esp_wifi_scan_get_ap_num(&ap_count);
     esp_wifi_scan_get_ap_records(&number, ap_info);
     ESP_LOGD(TAG, "Found %d networks", ap_count);
+
+    // esp_wifi_scan_get_ap_records() does NOT update *number — it stays at the
+    // caller's initial value regardless of how many records were actually copied.
+    // So we cannot trust `number` and must clamp the loop bound to MIN(ap_count, buffer).
+    ap_count = MIN(ap_count, WIFI_SCAN_MAX_RECORDS);
 
     httpd_resp_set_type(req, "application/octet-stream");
     for (int i = 0; i < ap_count; i++) {

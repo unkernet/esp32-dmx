@@ -337,6 +337,9 @@ static void remove_ws_client(int fd)
         active_ws_client.fd = -1;
         active_ws_client.handle = NULL;
     }
+    // NOTE: esp_http_server does NOT actually close WebSocket sockets when the
+    // session is torn down, the socket handles leak and the server eventually
+    // runs out of slots. Keep the explicit close() here.
     close(fd);
     xSemaphoreGive(ws_mutex);
 }
