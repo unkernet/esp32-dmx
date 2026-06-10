@@ -1,32 +1,24 @@
-idf_build_get_property(target IDF_TARGET)
-
-set(srcs)
-set(public_include "include")
-if(CONFIG_SOC_UART_SUPPORTED)
-    list(APPEND srcs "src/uart.c" "src/uart_wakeup.c")
-    if(CONFIG_SOC_UHCI_SUPPORTED)
-        list(APPEND srcs "src/uhci.c")
-    endif()
-endif()
-
-
-if(${target} STREQUAL "linux")
-    set(priv_requires esp_ringbuf)
+if(${IDF_VERSION_MAJOR} EQUAL 5)
+    set(ver_dir "v5")
+elseif(${IDF_VERSION_MAJOR} EQUAL 6)
+    set(ver_dir "v6")
 else()
-    set(priv_requires esp_pm esp_driver_gpio esp_ringbuf esp_mm)
+    message(FATAL_ERROR
+        "esp_driver_uart fork supports IDF 5.x and 6.x only "
+        "(detected ${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR})")
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/${ver_dir}/component.cmake")
 
 idf_component_register(
-    SRCS ${srcs}
-    INCLUDE_DIRS ${public_include}
-    PRIV_REQUIRES "${priv_requires}"
-    LDFRAGMENTS "linker.lf"
+    SRCS ${SRCS}
+    INCLUDE_DIRS ${INCLUDE_DIRS}
+    PRIV_INCLUDE_DIRS ${PRIV_INCLUDE_DIRS}
+    REQUIRES "${REQUIRES}"
+    PRIV_REQUIRES "${PRIV_REQUIRES}"
+    LDFRAGMENTS "${LDFRAGMENTS}"
 )
 
-if(CONFIG_VFS_SUPPORT_IO AND CONFIG_SOC_UART_SUPPORTED)
-    target_link_libraries(${COMPONENT_LIB} PUBLIC idf::vfs)
-    target_sources(${COMPONENT_LIB} PRIVATE "src/uart_vfs.c")
-    if(CONFIG_ESP_CONSOLE_UART)
-        target_link_libraries(${COMPONENT_LIB} INTERFACE "-u uart_vfs_include_dev_init")
-    endif()
+if(COMMAND uart_apply_custom_settings)
+    uart_apply_custom_settings()
 endif()

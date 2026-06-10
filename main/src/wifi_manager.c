@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include "freertos/event_groups.h"
+#include "sys/param.h"
 #include <lwip/inet.h>
 #include "esp_wifi.h"
 #include "esp_event.h"

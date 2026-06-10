@@ -6,4 +6,5 @@ node_modules
 /.pio
 /build
 /managed_components
+/sdkconfig
 /sdkconfig*.old

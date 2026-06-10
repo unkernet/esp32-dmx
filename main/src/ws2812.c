@@ -1,14 +1,22 @@
 #include "esp_err.h"
+#include "esp_idf_version.h"
 #include "driver/rmt_tx.h"
 #include "soc/soc_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sys/param.h"
 #include "ws2812.h"
 #include "modules.h"
 
 #define WS2812_RESET_US 75
 static const char *TAG = "WS_2812";
+
+#if ESP_IDF_VERSION_MAJOR > 5
+#include "hal/rmt_ll.h"
+#define SOC_RMT_TX_CANDIDATES_PER_GROUP RMT_LL_TX_CANDIDATES_PER_INST
+#define SOC_RMT_GROUPS RMT_LL_INST_NUM
+#endif
 
 #define RMT_TX_NUM_MAX    (SOC_RMT_TX_CANDIDATES_PER_GROUP * SOC_RMT_GROUPS)
 #define WS2812_PORT_COUNT_MAX    MIN(4, RMT_TX_NUM_MAX)
