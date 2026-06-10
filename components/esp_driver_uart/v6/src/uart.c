@@ -1330,6 +1330,7 @@ static void UART_ISR_ATTR uart_rx_intr_handler_default(void *param)
         } else if ((uart_intr_status & UART_INTR_RXFIFO_TOUT)
                    || (uart_intr_status & UART_INTR_RXFIFO_FULL)
                    || (uart_intr_status & UART_INTR_CMD_CHAR_DET)
+                   || (uart_intr_status & UART_INTR_BRK_DET)
                   ) {
             if (pat_flg == 1) {
                 uart_intr_status |= UART_INTR_CMD_CHAR_DET;
@@ -1354,8 +1355,8 @@ static void UART_ISR_ATTR uart_rx_intr_handler_default(void *param)
                     pat_idx = uart_find_pattern_from_last(p_uart->rx_data_buf, rx_fifo_len - 1, pat_chr, pat_num);
                 } else {
                     //After Copying the Data From FIFO ,Clear intr_status
-                    uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL);
-                    uart_event.type = UART_DATA;
+                    uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_TOUT | UART_INTR_RXFIFO_FULL | UART_INTR_BRK_DET);
+                    uart_event.type = (uart_intr_status & UART_INTR_BRK_DET) ? UART_DATA_BREAK : UART_DATA;
                     uart_event.size = rx_fifo_len;
                     uart_event.timeout_flag = (uart_intr_status & UART_INTR_RXFIFO_TOUT) ? true : false;
                 }
@@ -1440,9 +1441,6 @@ static void UART_ISR_ATTR uart_rx_intr_handler_default(void *param)
             UART_EXIT_CRITICAL_ISR(&uart_selectlock);
             uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_RXFIFO_OVF);
             uart_event.type = UART_FIFO_OVF;
-        } else if (uart_intr_status & UART_INTR_BRK_DET) {
-            uart_hal_clr_intsts_mask(&(uart_context[uart_num].hal), UART_INTR_BRK_DET);
-            uart_event.type = UART_BREAK;
         } else if (uart_intr_status & UART_INTR_FRAM_ERR) {
             UART_ENTER_CRITICAL_ISR(&uart_selectlock);
             if (p_uart->uart_select_notif_callback) {
@@ -2103,6 +2101,8 @@ esp_err_t uart_driver_install(uart_port_t uart_num, int rx_buffer_size, int tx_b
     };
     ret = uart_intr_config(uart_num, &uart_intr);
     ESP_GOTO_ON_ERROR(ret, err, UART_TAG, "Could not configure the interrupt for UART");
+
+    ESP_LOGI(UART_TAG, "Patched UART driver installed");
 
     return ret;
 
