@@ -350,6 +350,9 @@ label.field > .description {
   color: var(--primary);
   content: "▶";
 }
+.scripts li.sleep:before {
+  color: var(--pico-primary-background);
+}
 .scripts ul button {
   padding: .25em var(--pico-form-element-spacing-horizontal);
   line-height: 1em;

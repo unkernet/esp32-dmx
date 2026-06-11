@@ -1,4 +1,4 @@
-import { parseConfig, serializeConfig, parseApRecords } from './config';
+import { parseConfig, serializeConfig, parseApRecords, parseScriptList } from './config';
 
 const octetStream = 'application/octet-stream';
 
@@ -22,9 +22,9 @@ export const API = {
   },
 
   async getScripts() {
-    const res = await fetch('/lua/list');
+    const res = await fetch('/lua/list', { headers: { accept: octetStream }});
     if (!res.ok) throw new Error('Failed to load scripts');
-    return await res.json();
+    return parseScriptList(await res.arrayBuffer());
   },
 
   async runScript(name) {

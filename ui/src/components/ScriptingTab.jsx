@@ -11,6 +11,7 @@ export function ScriptingTab() {
   const [scripts, setScripts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningScript, setRunningScript] = useState(null);
+  const [scriptState, setScriptState] = useState(null);
   const [scriptError, setScriptError] = useState(null);
   const [hideError, setHideError] = useState(null);
   const [showContentModal, setShowContentModal] = useState(false);
@@ -26,10 +27,11 @@ export function ScriptingTab() {
       setLoading(true);
       const data = await API.getScripts();
       if (data.running === tempScriptName) {
-        data.scripts.unshift(tempScriptName);
+        data.files.unshift(tempScriptName);
       }
       setRunningScript(data.running || null);
-      setScripts(data.scripts || []);
+      setScriptState(data.state || null);
+      setScripts(data.files || []);
       setScriptError(data.error || null);
     } catch (e) {
       alert("Failed to fetch scripts: " + e.message);
@@ -220,7 +222,7 @@ export function ScriptingTab() {
               const temp = running && script === tempScriptName;
               const name = temp ? '📝' : script;
               const luac = name.endsWith('.luac');
-              return <li key={script} class={running ? "run" : null}>
+              return <li key={script} class={running ? (scriptState === 2 ? "run sleep" : "run") : null}>
                 <span>{name}</span>
                 <div>
                   {running ? (
@@ -293,43 +295,77 @@ export function ScriptingTab() {
       >
         <div class="s-guide">
           <p>The system uses Lua version 5.5.</p>
-          <p>Scripts usually include an <strong>endless loop</strong> to process or generate DMX data in real-time.</p>
-          <p>Script file named <code>init.lua</code> will be run on startup.</p>
+          <p>The script's main body runs once. If it registers any DMX handlers or timers, the script stays in an event loop and dispatches them as events arrive. When the last handler unregisters and the last timer fires, the script exits.</p>
+          <p>A script file named <code>init.lua</code> is run on startup.</p>
 
-          <h4>Functions:</h4>
+          <h4>DMX I/O:</h4>
           <ul>
             <li>
-              <code>dmx.send(universe, data, network)</code><br/>
-              Transmit data. <code>data</code> should be a binary string (e.g., from <code>string.char</code>). If <code>network</code> is true, data is also sent via Art-Net and WebSocket.
+              <code>esp.dmx.send(universe, data [, network])</code><br/>
+              Transmit a DMX frame. <code>data</code> should be a binary string (e.g., from <code>string.char</code>). When <code>network</code> is true, the frame is also sent via Art-Net and WebSocket.
             </li>
             <li>
-              <code>dmx.read(universe, timeout)</code><br/>
-              Wait up to <code>timeout</code> ms for data. Returns binary string or <code>nil</code>.
+              <code>esp.dmx.on(universe, function(data, universe) end)</code><br/>
+              Register a callback fired whenever a new frame arrives on <code>universe</code>. Pass <code>nil</code> instead of a function to unsubscribe. Calling again for the same universe replaces the handler.
             </li>
             <li>
-              <code>sleep(ms)</code><br/>
-              Pause execution for the specified milliseconds.
-            </li>
-            <li>
-              <code>random(min, max)</code><br/>
-              Generate a true random integer between <code>min</code> and <code>max</code> (inclusive). If no arguments, returns a full 32-bit integer.
-            </li>
-            <li>
-              <code>print(string)</code> or <code>warn(string)</code><br/>
-              Print a message to the system log for debugging.
+              <code>esp.dmx.read(universe, timeout_ms)</code><br/>
+              Block until a frame arrives or <code>timeout_ms</code> elapses. Returns a binary string or <code>nil</code>. Deprecated; prefer <code>esp.dmx.on</code> for new code.
             </li>
           </ul>
 
-          <h4>Example:</h4>
+          <h4>Timers:</h4>
+          <ul>
+            <li>
+              <code>esp.setTimeout(function() end, ms)</code><br/>
+              Run a function once after <code>ms</code> milliseconds. Returns an integer ID.
+            </li>
+            <li>
+              <code>esp.setInterval(function() end, ms)</code><br/>
+              Run a function every <code>ms</code> milliseconds. Returns an integer ID.
+            </li>
+            <li>
+              <code>esp.clearTimer(id)</code><br/>
+              Cancel a pending timeout or stop an interval.
+            </li>
+          </ul>
+
+          <h4>Other:</h4>
+          <ul>
+            <li>
+              <code>sleep(ms)</code><br/>
+              Block execution for <code>ms</code> milliseconds. Blocks all handlers and timers — prefer <code>esp.setTimeout</code> when possible.
+            </li>
+            <li>
+              <code>random(min, max)</code><br/>
+              Random integer between <code>min</code> and <code>max</code> (inclusive). With no arguments, returns a full 32-bit integer.
+            </li>
+            <li>
+              <code>print(message)</code> or <code>warn(message)</code><br/>
+              Write a line to the system log for debugging.
+            </li>
+          </ul>
+
+          <h4>Example — forward a universe:</h4>
           <pre style={{ background: "var(--pico-code-background)", padding: "10px" }}>{
-`while true do
-  local data = dmx.read(1, 100) -- read data from universe 1
-  if data then
-    dmx.send(2, data) -- output it to universe 2
-  end
-  sleep(100)
-end`
+`esp.dmx.on(1, function(data)
+  esp.dmx.send(2, data)
+end)`
           }</pre>
+
+          <h4>Example — 40 FPS rainbow:</h4>
+          <pre style={{ background: "var(--pico-code-background)", padding: "10px" }}>{
+`local hue = 0
+esp.setInterval(function()
+  local out = {}
+  for i = 1, 50 do
+    out[i] = string.char((hue + i) & 0xff, 255, 255)
+  end
+  esp.dmx.send(10, table.concat(out))
+  hue = hue + 1
+end, 25)`
+          }</pre>
+
         </div>
       </Modal>
     </>

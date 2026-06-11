@@ -1,6 +1,8 @@
 #ifndef LUA_INTERPRETER_H
 #define LUA_INTERPRETER_H
 
+#define LUA_32BITS
+
 #include <stdbool.h>
 #include "esp_err.h"
 #include "esp_http_server.h"

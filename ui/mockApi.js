@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import { WebSocketServer } from 'ws';
-import { serializeConfig, serializeMeta, serializeAp } from './src/config.js';
+import { serializeConfig, serializeMeta, serializeAp, serializeScriptList } from './src/config.js';
 
 const wss = new WebSocketServer({ noServer: true });
 const luaScripts = new Map();
@@ -13,6 +13,7 @@ luaScripts.set('init.lua', `while true do
 end`);
 luaScripts.set('bin.luac', ``);
 let runningScript = 'init.lua';
+let runningState = 2;
 let lastError = null;
 const start = Date.now();
 
@@ -148,17 +149,19 @@ export const mockApi = {
       }
 
       if (req.url === '/lua/list') {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
-          scripts: Array.from(luaScripts.keys()),
-          running: runningScript,
-          error: lastError
-        }));
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.end(new Uint8Array(serializeScriptList({
+          running: runningScript || '',
+          error: lastError || '',
+          state: runningScript ? runningState : null,
+          files: Array.from(luaScripts.keys()),
+        })));
         return;
       }
 
       if (req.url.startsWith('/lua/run/') && req.method === 'POST') {
         runningScript = req.url.substr('/lua/run/'.length) || tempScriptName;
+        runningState = 1;
         lastError = null;
         if (runningScript === 'error.lua') {
             lastError = 'Error: Mock runtime error';
@@ -180,6 +183,7 @@ export const mockApi = {
 
       if (req.url === '/lua/kill' && req.method === 'POST') {
         runningScript = null;
+        runningState = 0;
         lastError = null; // Clear error on kill
         res.end('OK');
         return;

@@ -71,6 +71,7 @@ const apRecord = [
 ];
 
 const scriptList = [
+  ['state', 'u8'],
   ['running', 's64'],
   ['error', 's128'],
   ['files', [-1, 's48']],

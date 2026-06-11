@@ -144,8 +144,8 @@ export function ConfigTabs({ moduleName }) {
         <input 
           type="number" 
           min="1" max="504" 
-          value={configValue.ambitful.addr}
-          onInput={(e) => updateConfig('ambitful.addr', parseInt(e.target.value) || 0)} 
+          value={configValue.ambitful.addr + 1}
+          onInput={(e) => updateConfig('ambitful.addr', Math.max(0, (parseInt(e.target.value) || 0) - 1))} 
         />
       </FormField>
       <FormField label="Ambitful channel" description="Channel number, 1-19.">
