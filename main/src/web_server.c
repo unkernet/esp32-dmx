@@ -22,6 +22,7 @@
 #ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
 #endif
+#include "mqtt.h"
 
 #if ( ( configUSE_TRACE_FACILITY == 1 ) && ( configUSE_STATS_FORMATTING_FUNCTIONS > 0 ) )
 #define TASK_LIST
@@ -101,7 +102,7 @@ void send_ws_dmx_data(uint16_t universe, const uint8_t * data, uint16_t length, 
 }
 
 static esp_err_t http_get_status_handler(httpd_req_t *req) {
-    char json_buf[120]; // Sufficient for the JSON response
+    char json_buf[140]; // Sufficient for the JSON response
     int64_t uptime_us = esp_timer_get_time();
 
     uint32_t heap_total = heap_caps_get_total_size(MALLOC_CAP_8BIT);
@@ -117,10 +118,12 @@ static esp_err_t http_get_status_handler(httpd_req_t *req) {
                 "\"free\":%lu,"
                 "\"block\":%lu,"
                 "\"min\":%lu"
-            "}"
+            "},"
+            "\"mqtt\":%d"
         "}",
         uptime_us / 1000000,
-        heap_total, heap_free, heap_free_block, heap_min_free
+        heap_total, heap_free, heap_free_block, heap_min_free,
+        mqtt_get_status()
     );
 
     httpd_resp_set_type(req, "application/json");

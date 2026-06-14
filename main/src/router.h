@@ -13,6 +13,7 @@ typedef enum {
     DATA_SOURCE_DMX_2_IN,  ///< Hardware DMX Port 2 input
     DATA_SOURCE_DMX_3_IN,  ///< Hardware DMX Port 3 input
     DATA_SOURCE_WS,        ///< WebSocket input
+    DATA_SOURCE_MQTT,      ///< MQTT input
     DATA_SOURCE_LUA,       ///< Lua script generated data
     DATA_SOURCE_LUA_DEBUG, ///< Lua script generated data with debug flag
 } dmx_data_source_t;

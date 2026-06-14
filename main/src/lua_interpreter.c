@@ -1,21 +1,24 @@
 #include "lua_interpreter.h"
-#include "lua.h"
-#include "lualib.h"
-#include "lauxlib.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_spiffs.h"
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <esp_log.h>
+#include <esp_spiffs.h>
 #include "app_config.h"
 #include "router.h"
 #include "util.h"
 #include "modules.h"
-#include "esp_random.h"
+#include <esp_random.h>
 #include <dirent.h>
 #include <limits.h>
 #include <string.h>
 #include <sys/stat.h>
-#include "freertos/queue.h"
+#include <freertos/queue.h>
+#ifdef MQTT_SUPPORTED
+#include "mqtt.h"
+#endif
 
 static_assert(sizeof(lua_Integer) == 4 && sizeof(lua_Number) == 4,
     "Lua API width disagrees with liblua build (LUA_32BITS missing?)");
@@ -25,9 +28,12 @@ static_assert(sizeof(lua_Integer) == 4 && sizeof(lua_Number) == 4,
 #define C_SCRIPT_LEN 64
 #define ERROR_LEN 128
 #define MAX_UNIVERSE_CB 4
+#define MAX_MQTT_CB     4
 #define MAX_TIMERS      8
 #define EVT_QUEUE_LEN   8
 #define MAX_UNIVERSE    32768
+#define MQTT_TOPIC_LEN  64
+#define MQTT_PAYLOAD_MAX DMX_LEN
 static const char *TAG = "LUA";
 
 typedef enum: uint8_t {
@@ -38,6 +44,7 @@ typedef enum: uint8_t {
 
 typedef enum {
     EVT_DMX,
+    EVT_MQTT,
     EVT_SHUTDOWN
 } lua_event_type_t;
 
@@ -64,6 +71,13 @@ typedef struct __attribute__((packed)) {
     char last_error[ERROR_LEN];
 } script_state_t;
 
+#ifdef MQTT_SUPPORTED
+typedef struct {
+    char pattern[MQTT_TOPIC_LEN];
+    int lua_ref;
+} lua_mqtt_cb_t;
+#endif
+
 typedef struct {
     TaskHandle_t task_handle;
     lua_State *L;
@@ -76,6 +90,16 @@ typedef struct {
     uint16_t dmx_buffer_len;
     uint16_t last_read_universe;
     uint16_t buffered_universe;
+
+    #ifdef MQTT_SUPPORTED
+    // MQTT Data exchange
+    SemaphoreHandle_t mqtt_data_mutex;
+    char mqtt_pending_topic[MQTT_TOPIC_LEN];
+    uint8_t mqtt_pending_payload[MQTT_PAYLOAD_MAX];
+    uint16_t mqtt_pending_payload_len;
+    bool mqtt_has_pending;
+    lua_mqtt_cb_t mqtt_cb[MAX_MQTT_CB];
+    #endif
 
     // Event loop
     QueueHandle_t event_queue;
@@ -316,6 +340,149 @@ static int l_esp_timer_register(lua_State *L, bool is_interval) {
 static int l_esp_set_timeout(lua_State *L)  { return l_esp_timer_register(L, false); }
 static int l_esp_set_interval(lua_State *L) { return l_esp_timer_register(L, true); }
 
+#ifdef MQTT_SUPPORTED
+static int l_esp_mqtt_on(lua_State *L) {
+    size_t plen;
+    const char *pattern = luaL_checklstring(L, 1, &plen);
+    int fn_type = lua_type(L, 2);
+
+    if (plen >= MQTT_TOPIC_LEN)
+        return luaL_error(L, "mqtt.on: topic too long (max %d)", MQTT_TOPIC_LEN - 1);
+    if (fn_type != LUA_TFUNCTION && fn_type != LUA_TNIL)
+        return luaL_error(L, "mqtt.on: handler must be function or nil");
+
+    int slot = -1, empty = -1;
+    for (int i = 0; i < MAX_MQTT_CB; i++) {
+        if (S->mqtt_cb[i].lua_ref != LUA_NOREF
+            && strcmp(S->mqtt_cb[i].pattern, pattern) == 0)
+        {
+            slot = i;
+            break;
+        }
+        if (S->mqtt_cb[i].lua_ref == LUA_NOREF && empty == -1) {
+            empty = i;
+        }
+    }
+
+    if (slot >= 0) {
+        luaL_unref(L, LUA_REGISTRYINDEX, S->mqtt_cb[slot].lua_ref);
+        S->mqtt_cb[slot].lua_ref = LUA_NOREF;
+        S->active_callback_total--;
+        mqtt_unsubscribe(S->mqtt_cb[slot].pattern);
+    }
+
+    if (fn_type == LUA_TNIL) return 0;
+
+    if (slot < 0) slot = empty;
+    if (slot < 0) return luaL_error(L, "mqtt.on: no free slot (max %d)", MAX_MQTT_CB);
+
+    lua_pushvalue(L, 2);
+    S->mqtt_cb[slot].lua_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    strncpy(S->mqtt_cb[slot].pattern, pattern, MQTT_TOPIC_LEN - 1);
+    S->mqtt_cb[slot].pattern[MQTT_TOPIC_LEN - 1] = '\0';
+    S->active_callback_total++;
+
+    mqtt_subscribe(pattern, 0);
+    return 0;
+}
+
+static int l_esp_mqtt_publish(lua_State *L) {
+    const char *topic = luaL_checkstring(L, 1);
+    size_t plen;
+    const char *payload = luaL_checklstring(L, 2, &plen);
+    int qos = 0;
+    bool retain = false;
+    if (lua_istable(L, 3)) {
+        lua_getfield(L, 3, "qos");    if (!lua_isnil(L, -1)) qos    = lua_tointeger(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 3, "retain"); if (!lua_isnil(L, -1)) retain = lua_toboolean(L, -1); lua_pop(L, 1);
+    }
+    if (mqtt_get_status() != MQTT_STATUS_CONNECTED)
+        return luaL_error(L, "mqtt.publish: not connected");
+    int msg_id = mqtt_publish(topic, payload, plen, qos, retain);
+    lua_pushinteger(L, msg_id);
+    return 1;
+}
+
+static void lua_mqtt_on_message(const char *topic, size_t topic_len,
+                                const uint8_t *payload, size_t payload_len) {
+    if (!S || !S->task_handle) return;
+    bool any_match = false;
+    for (int i = 0; i < MAX_MQTT_CB; i++) {
+        if (S->mqtt_cb[i].lua_ref == LUA_NOREF) continue;
+        if (mqtt_topic_match(S->mqtt_cb[i].pattern, topic, topic_len)) {
+            any_match = true; break;
+        }
+    }
+    if (!any_match) return;
+
+    if (xSemaphoreTake(S->mqtt_data_mutex, 0) != pdTRUE) return;
+    size_t plen = payload_len > MQTT_PAYLOAD_MAX ? MQTT_PAYLOAD_MAX : payload_len;
+    size_t tlen = topic_len   >= MQTT_TOPIC_LEN  ? MQTT_TOPIC_LEN - 1 : topic_len;
+    memcpy(S->mqtt_pending_payload, payload, plen);
+    memcpy(S->mqtt_pending_topic,   topic,   tlen);
+    S->mqtt_pending_topic[tlen]    = '\0';
+    S->mqtt_pending_payload_len    = plen;
+    S->mqtt_has_pending            = true;
+    xSemaphoreGive(S->mqtt_data_mutex);
+
+    if (S->event_queue) {
+        lua_event_t evt = { .type = EVT_MQTT };
+        xQueueSend(S->event_queue, &evt, 0);
+    }
+}
+
+static void lua_mqtt_on_connected(void) {
+    if (!S) return;
+    for (int i = 0; i < MAX_MQTT_CB; i++) {
+        if (S->mqtt_cb[i].lua_ref != LUA_NOREF) {
+            mqtt_subscribe(S->mqtt_cb[i].pattern, 0);
+        }
+    }
+}
+
+// Returns false on Lua error (last_error filled, loop should terminate)
+static bool dispatch_mqtt_event(lua_State *L) {
+    char    topic[MQTT_TOPIC_LEN];
+    uint8_t payload[MQTT_PAYLOAD_MAX];
+    size_t  payload_len = 0;
+    bool    have = false;
+
+    xSemaphoreTake(S->mqtt_data_mutex, portMAX_DELAY);
+    if (S->mqtt_has_pending) {
+        memcpy(topic,   S->mqtt_pending_topic, MQTT_TOPIC_LEN);
+        memcpy(payload, S->mqtt_pending_payload, S->mqtt_pending_payload_len);
+        payload_len = S->mqtt_pending_payload_len;
+        S->mqtt_has_pending = false;
+        have = true;
+    }
+    xSemaphoreGive(S->mqtt_data_mutex);
+
+    if (!have) return true;
+
+    for (int i = 0; i < MAX_MQTT_CB; i++) {
+        int ref = S->mqtt_cb[i].lua_ref;
+        if (ref == LUA_NOREF) continue;
+        if (!mqtt_topic_match(S->mqtt_cb[i].pattern, topic, strlen(topic))) continue;
+
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);            // [fn]
+        lua_pushlstring(L, (const char *)payload, payload_len);
+        lua_pushstring(L, topic);
+        int status = lua_pcall(L, 2, 0, 0);
+        if (status != LUA_OK) {
+            const char *err = lua_tostring(L, -1);
+            if (err) {
+                strncpy(S->script_state.last_error, err, ERROR_LEN - 1);
+                S->script_state.last_error[ERROR_LEN - 1] = '\0';
+            }
+            lua_pop(L, 1);
+            return false;
+        }
+    }
+    lua_gc(L, LUA_GCSTEP, 0);
+    return true;
+}
+#endif
+
 static int l_esp_clear_timer(lua_State *L) {
     uint32_t id = (uint32_t)luaL_checkinteger(L, 1);
     if (id == 0) return 0;
@@ -336,6 +503,18 @@ static void reset_event_state(void) {
         S->universe_cb[i].lua_ref = LUA_NOREF;
         S->universe_cb[i].universe = EMPTY;
     }
+
+    #ifdef MQTT_SUPPORTED
+    for (int i = 0; i < MAX_MQTT_CB; i++) {
+        if (S->mqtt_cb[i].lua_ref != LUA_NOREF) {
+            mqtt_unsubscribe(S->mqtt_cb[i].pattern);
+            luaL_unref(S->L, LUA_REGISTRYINDEX, S->mqtt_cb[i].lua_ref);
+            S->mqtt_cb[i].lua_ref = LUA_NOREF;
+        }
+    }
+    S->mqtt_has_pending = false;
+    #endif
+
     for (int i = 0; i < MAX_TIMERS; i++) {
         S->timers[i].id = 0;
         S->timers[i].lua_ref = LUA_NOREF;
@@ -445,6 +624,12 @@ static void run_event_loop(lua_State *L) {
             if (evt.type == EVT_DMX) {
                 if (!dispatch_dmx_event(L, evt.universe)) break;
             }
+
+            #ifdef MQTT_SUPPORTED
+            if (evt.type == EVT_MQTT) {
+                if (!dispatch_mqtt_event(L)) break;
+            }
+            #endif
         }
 
         if (S->should_stop) break;
@@ -478,8 +663,21 @@ static esp_err_t ensure_lua_state() {
             S = NULL;
             return ESP_ERR_NO_MEM;
         }
+
+        #ifdef MQTT_SUPPORTED
+        if(unlikely(!(S->mqtt_data_mutex = xSemaphoreCreateMutex()))) {
+            vSemaphoreDelete(S->dmx_data_mutex);
+            free(S);
+            S = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        #endif
+
         if(unlikely(!(S->event_queue = xQueueCreate(EVT_QUEUE_LEN, sizeof(lua_event_t))))) {
             vSemaphoreDelete(S->dmx_data_mutex);
+            #ifdef MQTT_SUPPORTED
+            vSemaphoreDelete(S->mqtt_data_mutex);
+            #endif
             free(S);
             S = NULL;
             return ESP_ERR_NO_MEM;
@@ -492,6 +690,11 @@ static esp_err_t ensure_lua_state() {
             S->universe_cb[i].lua_ref = LUA_NOREF;
             S->universe_cb[i].universe = EMPTY;
         }
+        #ifdef MQTT_SUPPORTED
+        for (int i = 0; i < MAX_MQTT_CB; i++) {
+            S->mqtt_cb[i].lua_ref = LUA_NOREF;
+        }
+        #endif
         for (int i = 0; i < MAX_TIMERS; i++) {
             S->timers[i].lua_ref = LUA_NOREF;
         }
@@ -567,9 +770,19 @@ static void lua_task(void *pvParameters) {
     luaL_setfuncs(L, esp_lib, 0);             // [esp]
     lua_newtable(L);                          // [esp, dmx_tbl]
     luaL_setfuncs(L, esp_dmx_lib, 0);         // [esp, dmx_tbl]
-    lua_pushvalue(L, -1);                     // [esp, dmx_tbl, dmx_tbl]
-    lua_setglobal(L, "dmx");                  // [esp, dmx_tbl]  (deprecated alias)
     lua_setfield(L, -2, "dmx");               // [esp]           (esp.dmx = dmx_tbl)
+    
+    #ifdef MQTT_SUPPORTED
+    const luaL_Reg esp_mqtt_lib[] = {
+        {"publish", l_esp_mqtt_publish},
+        {"on",      l_esp_mqtt_on},
+        {NULL, NULL}
+    };
+    lua_newtable(L);                          // [esp, mqtt_tbl]
+    luaL_setfuncs(L, esp_mqtt_lib, 0);        // [esp, mqtt_tbl]
+    lua_setfield(L, -2, "mqtt");              // [esp]           (esp.mqtt = mqtt_tbl)
+    #endif
+
     lua_setglobal(L, "esp");                  // []
 
     // Register global custom functions
@@ -654,6 +867,11 @@ static void lua_task(void *pvParameters) {
 esp_err_t lua_interpreter_init(void) {
     RETURN_ON_ERROR(ensure_lua_state());
 
+    #ifdef MQTT_SUPPORTED
+    mqtt_set_data_cb(lua_mqtt_on_message);
+    mqtt_set_connected_cb(lua_mqtt_on_connected);
+    #endif
+
     struct stat st;
     if (stat("/user/init.lua", &st) == 0) {
         return lua_interpreter_run("init.lua");
@@ -670,7 +888,7 @@ static esp_err_t lua_interpreter_run_internal(lua_load_ctx_t *ctx) {
     ctx->load_sem = xSemaphoreCreateBinary();
     if (!ctx->load_sem) return ESP_ERR_NO_MEM;
 
-    xTaskCreate(lua_task, "lua_task", 8192, ctx, 5, &S->task_handle);
+    xTaskCreate(lua_task, "lua_task", 9216, ctx, 5, &S->task_handle);
     if (S->task_handle == NULL) {
         vSemaphoreDelete(ctx->load_sem);
         return ESP_ERR_NO_MEM;

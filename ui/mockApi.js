@@ -82,6 +82,7 @@ const metaCfg = new Uint8Array(serializeMeta({
     ws2812_0: true,
     ws2812_1: true,
     lua: true,
+    mqtt: true,
   },
   dev_name: 'TEST',
   dmx_name: ['DMX', 'Wirecless DMX', '', ''],
@@ -139,12 +140,7 @@ export const mockApi = {
             block: tmp - 10 * 1024 - (Math.random() * 1024 * 10 | 0),
             min: 1024 * 16,
           },
-          psram: {
-            total: 1024 * 300,
-            free: 1024 * 100,
-            block: 1024 * 80,
-            min: 1024 * 12,
-          }
+          mqtt: 1,
         }));
       }
 

@@ -27,6 +27,9 @@
 #ifdef LUA_INTERPRETER
 #include "lua_interpreter.h"
 #endif
+#ifdef MQTT_SUPPORTED
+#include "mqtt.h"
+#endif
 
 static const char *TAG = "MAIN";
 
@@ -90,6 +93,9 @@ void app_main() {
     LOG_ON_ERROR(start_webserver(&app_config), TAG, "start_webserver failed");
     #ifdef ARTNET
     LOG_ON_ERROR(start_artnet_server(&app_config), TAG, "start_artnet_server failed");
+    #endif
+    #ifdef MQTT_SUPPORTED
+    LOG_ON_ERROR(start_mqtt(&app_config), TAG, "start_mqtt failed");
     #endif
     LOG_ON_ERROR(start_mdns(), TAG, "start_mdns failed");
     #ifdef LUA_INTERPRETER

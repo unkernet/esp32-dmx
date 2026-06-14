@@ -51,5 +51,8 @@
 /** @brief Enable Art-Net server (Optional) */
 #define ARTNET
 
+/** @brief Enable MQTT client (~110Kb Flash, Optional) */
+#define MQTT_SUPPORTED
+
 
 #endif // HARDWARE_CONFIG_H

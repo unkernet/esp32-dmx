@@ -29,6 +29,7 @@
 
 #define MOD_EN_LUA           (1<<16)
 #define MOD_EN_AMBITFUL      (1<<17)
+#define MOD_EN_MQTT          (1<<18)
 /** @} */
 
 #ifndef DMX_LEN
@@ -158,6 +159,12 @@
     #define _BIT_ARTNET_EN    0
 #endif
 
+#ifdef MQTT_SUPPORTED
+    #define _BIT_MQTT_SUPP    MOD_EN_MQTT
+#else
+    #define _BIT_MQTT_SUPP    0
+#endif
+
 #ifndef LED_GPIO
     #define LED_GPIO    -1
 #endif
@@ -168,6 +175,7 @@
     _BIT_AMBITFUL_BLE_EN | \
     _BIT_LUA_EN | \
     _BIT_ARTNET_SUPP | \
+    _BIT_MQTT_SUPP | \
 0 )
 
 // By default enable all available hardware modules except AMBITFUL_BLE (consume lot of memory),

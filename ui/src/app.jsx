@@ -4,6 +4,7 @@ import { ConfigTabs } from "./components/ConfigTabs";
 import { MonitorTab } from "./components/MonitorTab";
 import { ControlTab } from "./components/ControlTab";
 import { SystemTab } from "./components/SystemTab";
+import { MqttTab } from "./components/MqttTab";
 import { API } from "./api";
 import { config, isDirty, activeTab } from "./signals";
 import { useSignalEffect } from '@preact/signals';
@@ -16,16 +17,17 @@ import {
   Cpu, 
   RefreshCcw,
   SlidersVertical,
-  // Network as ArtnetIcon,
 } from "lucide-preact";
 import ArtnetIcon from '../img/artnet.svg?react';
 import DmxIcon from '../img/dmx.svg?react';
 import Ws2812Icon from '../img/ws2812.svg?react';
 import ScriptIcon from '../img/script.svg?react';
+import MqttIcon from '../img/mqtt.svg?react';
 
 const tabs = [
   { id: "wifi", icon: Wifi, label: "WiFi", component: WifiTab }, 
   { id: "artnet", icon: ArtnetIcon, label: "Art-Net", component: () => <ConfigTabs moduleName="Art-Net" /> },
+  { id: "mqtt", icon: MqttIcon, label: "MQTT", component: MqttTab },
   { id: "dmx", icon: DmxIcon, label: "DMX", component: () => <ConfigTabs moduleName="DMX" /> },
   { id: "ble", icon: Bluetooth, label: "Ambitful", component: () => <ConfigTabs moduleName="Ambitful BLE" /> },
   { id: "ws2812", icon: Ws2812Icon, label: "Led", component: () => <ConfigTabs moduleName="WS2812" />, className: 'bigger' },
@@ -59,6 +61,7 @@ export function App() {
   const filteredTabs = useMemo(() => {
     const supportedMap = {
       artnet: ['artnet_out', 'artnet_in'],
+      mqtt: ['mqtt'],
       dmx: ['dmx_0_in', 'dmx_0_out', 'dmx_1_in', 'dmx_1_out', 'dmx_2_in', 'dmx_2_out', 'dmx_3_in', 'dmx_3_out'],
       ble: ['ambitful'],
       ws2812: ['ws2812_0', 'ws2812_1', 'ws2812_2', 'ws2812_3'],

@@ -9,6 +9,7 @@ const enabledModules = [
   'artnet_out', 'artnet_in', 'artnet_ws', 'reserved_15',
   'lua',
   'ambitful',
+  'mqtt',
 ];
 
 const dmxPortSchema = [
@@ -51,7 +52,8 @@ const schema = [
   ['dmx_ports', [4, dmxPortSchema]],
   ['ws2812_ports', [4, ws2812PortSchema]],
   ['ambitful', ambitfulSchema],
-  ['reserved', 's36'],
+  ['mqtt_broker_uri', 's256'],
+  ['reserved', 's28'],
 ];
 
 const metaSchema = [
@@ -76,6 +78,13 @@ const scriptList = [
   ['error', 's128'],
   ['files', [-1, 's48']],
 ]
+
+export const mqttStatus = [
+    'Disabled',
+    'Connecting',
+    'Connected',
+    'Disconnected',
+];
 
 // IP Helpers
 function uint32ToIp(uint32) {

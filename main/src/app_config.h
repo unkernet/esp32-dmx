@@ -63,6 +63,11 @@ typedef struct __attribute__((packed)) {
     uint8_t groups;
 } ambitful_settings_t;
 
+#define APP_CONFIG_MAGIC   0x5844
+#define APP_CONFIG_VERSION 2
+
+#define MQTT_BROKER_URI_LEN 256
+
 typedef struct __attribute__((packed)) {
     uint16_t magic;           // 0x5844 ('DX')
     uint16_t version;         // Incrementing version
@@ -71,11 +76,9 @@ typedef struct __attribute__((packed)) {
     dmx_port_settings_t dmx_ports[4];
     ws2812_settings_t ws2812_ports[4];
     ambitful_settings_t ambitful;
-    uint8_t reserved[36];     // Padding for future use
+    char mqtt_broker_uri[MQTT_BROKER_URI_LEN];
+    uint8_t reserved[28];     // Padding for future use
 } app_config_t;
-
-#define APP_CONFIG_MAGIC   0x5844
-#define APP_CONFIG_VERSION 1
 
 /**
  * @brief Initialize configuration with default values.
