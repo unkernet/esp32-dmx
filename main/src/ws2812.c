@@ -8,6 +8,7 @@
 #include "sys/param.h"
 #include "ws2812.h"
 #include "modules.h"
+#include <esp_heap_caps.h>
 
 #define WS2812_RESET_US 75
 static const char *TAG = "WS_2812";
@@ -120,7 +121,7 @@ static esp_err_t ws2812_init_port(ws2812_settings_t *settings, int gpio_num) {
     RETURN_ON_NULL(port->tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
     xSemaphoreGive(port->tx_sem);
 
-    RETURN_ON_NULL(port->tx_data = malloc(WS2812_LEN), ESP_ERR_NO_MEM);
+    RETURN_ON_NULL(port->tx_data = heap_caps_malloc(WS2812_LEN, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), ESP_ERR_NO_MEM);
 
     char task_name[16];
     snprintf(task_name, sizeof(task_name), "ws2812_tx_%d", registered_port_count);
