@@ -440,7 +440,10 @@ static const httpd_uri_t ws_uri = {
     .method     = HTTP_GET,
     .handler    = ws_handler,
     .user_ctx   = NULL,
-    .is_websocket = true
+    .is_websocket = true,
+    #if ESP_IDF_VERSION_MAJOR > 5 && defined(CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT) 
+    .ws_post_handshake_cb = ws_handler,
+    #endif
 };
 
 static esp_err_t http_get_wifi_scan_handler(httpd_req_t *req) {

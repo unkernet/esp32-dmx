@@ -765,6 +765,7 @@ bool lua_interpreter_is_running(void) {
 #define LUA_LIST_FILENAME_LEN 48
 
 esp_err_t lua_interpreter_list_scripts(httpd_req_t *req) {
+    if (S == NULL) return ESP_FAIL;
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_send_chunk(req, (char*)&(S->script_state), sizeof(script_state_t));
 
