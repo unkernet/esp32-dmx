@@ -99,18 +99,21 @@ static esp_err_t ws2812_init_port(ws2812_settings_t *settings, int gpio_num) {
 
     RETURN_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &port->rmt_chan));
 
+    // Wi-Fi STA mode may cause occasional WS2812 bit errors with
+    // shorter pulse timings. These timings provide additional margin
+    // and eliminate rare pixel glitches.
     rmt_bytes_encoder_config_t enc_cfg = {
         .bit0 = {
             .level0 = 1,
             .duration0 = 1, // 312 ns
             .level1 = 0,
-            .duration1 = 3, // 937 ns
+            .duration1 = 6, // 1872 ns
         },
         .bit1 = {
             .level0 = 1,
-            .duration0 = 3, // 937 ns
+            .duration0 = 3, // 936 ns
             .level1 = 0,
-            .duration1 = 1, // 312 ns
+            .duration1 = 4, // 1248 ns
         },
         .flags.msb_first = 1,
     };
