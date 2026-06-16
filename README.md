@@ -1,5 +1,7 @@
 # ESP32-DMX: Universal Art-Net & DMX Gateway
 
+![ESP-IDF 6.0](https://img.shields.io/badge/ESP--IDF-6.0-green?logo=espressif&logoColor=fff) ![ESP-IDF 5.5](https://img.shields.io/badge/ESP--IDF-5.5-blue?logo=espressif&logoColor=fff) ![Platformio](https://img.shields.io/badge/Platformio-IDE-blue?logo=platformio&logoColor=fff) ![No Arduino](https://img.shields.io/badge/No-Arduino-red) ![ISC License](https://img.shields.io/badge/License-ISC-blue)
+
 A high-performance, flexible DMX-over-WiFi gateway based on the ESP32. This project acts as a bridge between Art-Net, WebSockets, physical DMX512 ports, and addressable LEDs, featuring a powerful embedded Lua scripting engine for custom logic.
 
 ## Key Features

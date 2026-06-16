@@ -108,32 +108,41 @@
 #endif
 
 #if (defined(WS2812_0_PIN) && (WS2812_0_PIN) >= 0)
+    #define _WS2812_0_EN 1
     #define _BIT_WS2812_0_EN    MOD_EN_WS2812_0
 #else
+    #define _WS2812_0_EN 0
     #define _BIT_WS2812_0_EN    0
     #undef WS2812_0_PIN
 #endif
 #if (defined(WS2812_1_PIN) && (WS2812_1_PIN) >= 0)
+    #define _WS2812_1_EN 1
     #define _BIT_WS2812_1_EN    MOD_EN_WS2812_1
 #else
+    #define _WS2812_1_EN 0
     #define _BIT_WS2812_1_EN    0
     #undef WS2812_1_PIN
 #endif
 #if (defined(WS2812_2_PIN) && (WS2812_2_PIN) >= 0)
+    #define _WS2812_2_EN 1
     #define _BIT_WS2812_2_EN    MOD_EN_WS2812_2
 #else
+    #define _WS2812_2_EN 0
     #define _BIT_WS2812_2_EN    0
     #undef WS2812_2_PIN
 #endif
 #if (defined(WS2812_3_PIN) && (WS2812_3_PIN) >= 0)
+    #define _WS2812_3_EN 1
     #define _BIT_WS2812_3_EN    MOD_EN_WS2812_3
 #else
+    #define _WS2812_3_EN 0
     #define _BIT_WS2812_3_EN    0
     #undef WS2812_3_PIN
 #endif
 #if (defined(WS2812_0_PIN) || defined(WS2812_1_PIN) || defined(WS2812_2_PIN) || defined(WS2812_3_PIN))
     #define _WS2812_EN
 #endif
+#define _WS2812_PORTS_COUNT (_WS2812_0_EN + _WS2812_1_EN + _WS2812_2_EN + _WS2812_3_EN)
 
 #ifndef WS2812_LEN
     #define WS2812_LEN (DMX_LEN)

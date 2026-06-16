@@ -10,7 +10,7 @@
 #include "modules.h"
 #include <esp_heap_caps.h>
 
-#define WS2812_RESET_US 75
+#define WS2812_RESET_US 80
 static const char *TAG = "WS_2812";
 
 #if ESP_IDF_VERSION_MAJOR > 5
@@ -36,6 +36,38 @@ static ws2812_port_t *registered_ports[WS2812_PORT_COUNT_MAX] = {0};
 static uint8_t registered_port_count = 0;
 static app_config_t *app_config;
 
+typedef struct {
+    rmt_symbol_word_t bit0;
+    rmt_symbol_word_t bit1;
+    rmt_symbol_word_t reset;
+} ws2812_encoder_config_t;
+
+RMT_ENCODER_FUNC_ATTR static size_t ws2812_simple_encode_cb(const void *data, size_t data_size,
+                                                            size_t symbols_written, size_t symbols_free,
+                                                            rmt_symbol_word_t *symbols, bool *done, void *arg) {
+    ws2812_encoder_config_t *cfg = (ws2812_encoder_config_t *)arg;
+    const uint8_t *bytes = (const uint8_t *)data;
+    size_t written = 0;
+
+    while (written < symbols_free) {
+        if (symbols_written < data_size * 8) {
+            uint8_t byte = bytes[symbols_written >> 3];
+            uint8_t bit = 7 - (symbols_written & 7); // MSB first
+            symbols[written++] = (byte & (1 << bit)) ? cfg->bit1 : cfg->bit0;
+            symbols_written++;
+        } else if (symbols_written == data_size * 8) {
+            symbols[written++] = cfg->reset;
+            symbols_written++;
+            *done = true;
+            break;
+        } else {
+            *done = true;
+            break;
+        }
+    }
+    return written;
+}
+
 static void ws2812_tx_task(void *arg)
 {
     ws2812_port_t *port = (ws2812_port_t *)arg;
@@ -54,7 +86,6 @@ static void ws2812_tx_task(void *arg)
         );
         if (err == ESP_OK) {
             rmt_tx_wait_all_done(port->rmt_chan, portMAX_DELAY);
-            esp_rom_delay_us(WS2812_RESET_US);
         }
         xSemaphoreGive(port->tx_sem);
     }
@@ -89,36 +120,53 @@ static esp_err_t ws2812_init_port(ws2812_settings_t *settings, int gpio_num) {
 
     port->universe = settings->universe;
 
-    rmt_tx_channel_config_t tx_cfg = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .gpio_num = gpio_num,
-        .mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
-        .resolution_hz = 3200000, // 3.2 Mhz
-        .trans_queue_depth = 4,
-    };
-
-    RETURN_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &port->rmt_chan));
-
-    // Wi-Fi STA mode may cause occasional WS2812 bit errors with
-    // shorter pulse timings. These timings provide additional margin
-    // and eliminate rare pixel glitches.
-    rmt_bytes_encoder_config_t enc_cfg = {
+    // RMT refill latency becomes critical when symbols are consumed faster than
+    // the encoder can populate the next memory block. Under Wi-Fi load, this can
+    // result in stale symbols being retransmitted, causing WS2812 data corruption.
+    //
+    // To increase refill margin, RMT memory is split across active ports and
+    // WS2812 timings are intentionally relaxed (≈2.5 µs/bit, ≈20 µs/byte),
+    // reducing refill interrupt rate and increasing buffer lifetime under load.
+    //
+    // Current effective throughput is ~97 FPS for a 512-byte frame, which is still
+    // higher than typical DMX512 refresh rate (~44 FPS at 512 slots).
+    static DRAM_ATTR ws2812_encoder_config_t enc_cfg = {
         .bit0 = {
             .level0 = 1,
             .duration0 = 1, // 312 ns
             .level1 = 0,
-            .duration1 = 6, // 1872 ns
+            .duration1 = 7, // 2184 ns
         },
         .bit1 = {
             .level0 = 1,
             .duration0 = 3, // 936 ns
             .level1 = 0,
-            .duration1 = 4, // 1248 ns
+            .duration1 = 5, // 1560 ns
         },
-        .flags.msb_first = 1,
+        .reset = {
+            .level0 = 0,
+            .duration0 = (WS2812_RESET_US * 3200000 / 1000000),
+            .level1 = 0,
+            .duration1 = 0,
+        },
     };
-    
-    RETURN_ON_ERROR(rmt_new_bytes_encoder(&enc_cfg, &port->bytes_encoder));
+
+    rmt_tx_channel_config_t tx_cfg = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .gpio_num = gpio_num,
+        .mem_block_symbols = ((SOC_RMT_TX_CANDIDATES_PER_GROUP / _WS2812_PORTS_COUNT) * SOC_RMT_MEM_WORDS_PER_CHANNEL),
+        .resolution_hz = 3200000, // 3.2 Mhz
+        .trans_queue_depth = 1,
+    };
+
+    rmt_simple_encoder_config_t simple_cfg = {
+        .callback = ws2812_simple_encode_cb,
+        .arg = &enc_cfg,
+        .min_chunk_size = 8
+    };
+
+    RETURN_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &port->rmt_chan));
+    RETURN_ON_ERROR(rmt_new_simple_encoder(&simple_cfg, &port->bytes_encoder));
     RETURN_ON_ERROR(rmt_enable(port->rmt_chan));
 
     RETURN_ON_NULL(port->tx_sem = xSemaphoreCreateBinary(), ESP_ERR_NO_MEM);
